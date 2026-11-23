@@ -27,6 +27,7 @@ extern volatile uint32_t moflexhd_counting;
 extern void moflexhd_note(uint32_t kind, uint64_t cycles, uint32_t pixels);
 enum { MOFLEXHD_DECODE, MOFLEXHD_DEBLOCK, MOFLEXHD_UNDEBLOCKED };
 
+#ifdef _WIN32
 __declspec(dllimport) void *__stdcall GetCurrentThread(void);
 __declspec(dllimport) int __stdcall QueryThreadCycleTime(void *thread, uint64_t *cycles);
 
@@ -35,6 +36,17 @@ static uint64_t moflexhd_cycles(void) {
     QueryThreadCycleTime(GetCurrentThread(), &cycles);
     return cycles;
 }
+#else
+/* Linux: Haiku's own build. Thread CPU time in nanoseconds, which
+ * moflexhd_note takes as well as cycles ("cycles or nanoseconds"). */
+#include <time.h>
+
+static uint64_t moflexhd_cycles(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_THREAD_CPUTIME_ID, &ts);
+    return (uint64_t)ts.tv_sec * 1000000000u + (uint64_t)ts.tv_nsec;
+}
+#endif
 
 /* words: the thread's cycles at the call, low and high, and the pixels */
 static void moflexhd_timed(Context *ctx, const uint32_t *words, uint32_t kind) {

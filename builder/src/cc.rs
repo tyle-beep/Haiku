@@ -464,7 +464,12 @@ fn compile_one(gcc: &Path, dir: &Path, source: &str, task: &Try, cap: Option<u64
     let level = LEVELS[task.level];
     command
         .args(FLAGS.iter().map(|&f| if f == "-O2" { level } else { f }))
-        .args(GCC_FLAGS)
+        .args(GCC_FLAGS);
+    if cfg!(unix) {
+        // the module links into a shared library on unix
+        command.arg("-fPIC");
+    }
+    command
         .current_dir(dir)
         .arg("-I")
         .arg(".")

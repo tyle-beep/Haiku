@@ -1746,6 +1746,7 @@ dependencies = [
  "fates-gfx",
  "haiku-setup",
  "image",
+ "libloading",
  "log",
  "zakuro",
  "zakuro-core",

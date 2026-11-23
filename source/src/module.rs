@@ -1,5 +1,6 @@
 //! oneexe: the game's code, recompiled on the player's PC from their own
-//! dump into a module of its own (data/code/game.dll), loaded and bound to
+//! dump into a module of its own (data/code/game.dll on Windows, game.so
+//! where Haiku runs natively), loaded and bound to
 //! Haiku.exe at start.
 //!
 //! Haiku.exe holds the engine and Haiku's own overrides, compiled when
@@ -105,12 +106,12 @@ pub fn dir(root: &Path) -> PathBuf {
 }
 
 /// where the module is: HAIKU_GAME_MODULE (a test or a bench root, which
-/// has the exe alone), else data/code/game.dll
+/// has the exe alone), else data/code/game.dll on Windows, game.so natively
 pub fn find(root: &Path) -> PathBuf {
     match std::env::var_os("HAIKU_GAME_MODULE").map(PathBuf::from) {
-        Some(path) if path.is_dir() => path.join(spec_module::FILE),
+        Some(path) if path.is_dir() => path.join(spec_module::file()),
         Some(path) => path,
-        None => dir(root).join(spec_module::FILE),
+        None => dir(root).join(spec_module::file()),
     }
 }
 
@@ -140,7 +141,11 @@ mod sys {
     pub const SEM_NOOPENFILEERRORBOX: u32 = 0x8000;
 }
 
+#[cfg(windows)]
 struct Library(*mut c_void);
+
+#[cfg(not(windows))]
+struct Library(libloading::Library);
 
 impl Library {
     #[cfg(windows)]
@@ -162,7 +167,8 @@ impl Library {
 
     #[cfg(not(windows))]
     fn open(path: &Path) -> Result<Library, String> {
-        Err(format!("{}: loading the game's module is only written for Windows", path.display()))
+        // SAFETY: the module is our own compiled code
+        unsafe { libloading::Library::new(path) }.map(Library).map_err(|e| format!("{} can't be loaded ({e})", path.display()))
     }
 
     fn symbol(&self, name: &str) -> Result<*mut c_void, String> {
@@ -178,8 +184,9 @@ impl Library {
         }
         #[cfg(not(windows))]
         {
-            let _ = name;
-            Err("no".into())
+            let raw = format!("{name}\0");
+            // SAFETY: our module, whose symbols the caller checks
+            unsafe { self.0.get::<*mut c_void>(raw.as_bytes()) }.map(|s| *s).map_err(|e| format!("the game's module has no {name} ({e})"))
         }
     }
 }

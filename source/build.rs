@@ -137,8 +137,14 @@ fn hosted(dir: &str) {
                 let i = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 let Some(source) = sources.get(i) else { break };
                 let object = ov.join(source).with_extension("o");
-                let output = std::process::Command::new(&cc)
-                    .args(FLAGS)
+                let mut compile = std::process::Command::new(&cc);
+                compile.args(FLAGS);
+                if cfg!(unix) {
+                    // Linux links the exe -pie, so its objects are
+                    // position-independent (Windows needs none of that)
+                    compile.arg("-fPIC");
+                }
+                let output = compile
                     .arg(format!("-ffile-prefix-map={}=haiku", ov.display()))
                     .arg("-I")
                     .arg(&ov)

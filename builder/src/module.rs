@@ -33,8 +33,22 @@ use crate::pipeline::{Progress, Shared};
 use crate::regions::{self, Region};
 use crate::{log, toolchain};
 
-/// the module, in data/code
-pub const FILE: &str = "game.dll";
+/// the module, in data/code: a DLL where Haiku.exe runs on Windows, a
+/// shared library where it runs natively. HAIKU_MODULE_EXT=dll|so builds
+/// the other one (a Windows module on Linux for Wine, or the reverse).
+pub fn file() -> &'static str {
+    match std::env::var("HAIKU_MODULE_EXT").as_deref() {
+        Ok("dll") => "game.dll",
+        Ok("so") => "game.so",
+        _ if cfg!(windows) => "game.dll",
+        _ => "game.so",
+    }
+}
+
+/// the extension old modules are moved aside with (install)
+fn backup_ext() -> &'static str {
+    file().rsplit('.').next().unwrap_or("dll")
+}
 /// what it was built for and from, beside it
 pub const NOTE: &str = "game.txt";
 /// the layout of what Haiku adds to the module (haiku_module.c, the note)
@@ -113,8 +127,11 @@ impl Note {
         std::fs::write(
             path,
             format!(
-                "# Haiku's module of the game's code (game.dll), recompiled on this PC from your own game.\n# Haiku.exe builds it again by itself when it has to.\nstamp {}\ntitle {:016X}\nsource {}\n",
-                self.stamp, self.title, self.source
+                "# Haiku's module of the game's code ({}), recompiled on this PC from your own game.\n# Haiku.exe builds it again by itself when it has to.\nstamp {}\ntitle {:016X}\nsource {}\n",
+                file(),
+                self.stamp,
+                self.title,
+                self.source
             ),
         )
     }
@@ -125,7 +142,7 @@ impl Note {
 pub fn check(dir: &Path, title: Option<u64>) -> Result<Note, String> {
     let spec = spec()?;
     let note = Note::read(&dir.join(NOTE)).ok_or("the game's module hasn't been built")?;
-    if !dir.join(FILE).is_file() {
+    if !dir.join(file()).is_file() {
         return Err("the game's module is missing".into());
     }
     let region = Region::of(note.title).ok_or("the game's module is of another game")?;
@@ -240,17 +257,27 @@ pub fn build(source: &Path, work: &Path, out: &Path, amiibo: Option<&Path>, setu
         command.arg("-dumpfullversion");
         command.output().map(|o| String::from_utf8_lossy(&o.stdout).trim().to_owned()).unwrap_or_default()
     };
+    // abi: what the compiler makes objects for (x86_64-w64-mingw32 or
+    // x86_64-linux-gnu). Two toolchains with the same version string make
+    // different objects, which must never be mistaken for each other (a
+    // Windows module and a native one built in the same work folder).
+    let machine = {
+        let mut command = crate::spawn::command(&tools.gcc);
+        command.arg("-dumpmachine");
+        command.output().map(|o| String::from_utf8_lossy(&o.stdout).trim().to_owned()).unwrap_or_default()
+    };
     let header = std::fs::read(code.join("recomp.h")).unwrap_or_default();
     let key_of = |source: &str| -> String {
         let mut hash = FNV_START;
         fnv(&mut hash, version.as_bytes());
+        fnv(&mut hash, machine.as_bytes());
         fnv(&mut hash, &header);
         fnv(&mut hash, &std::fs::read(code.join(source)).unwrap_or_default());
         format!("{hash:016X}")
     };
     let keys: Vec<(String, String)> = generated.sources.iter().map(|s| (s.clone(), key_of(s))).collect();
     let pending: Vec<String> = keys.iter().filter(|(s, k)| compiled.get(s) != Some(k) || !code.join(s).with_extension("o").is_file()).map(|(s, _)| s.clone()).collect();
-    log::line(format!("module: {} C files, {} to compile (gcc {version}, {jobs} at once at most)", generated.sources.len(), pending.len()));
+    log::line(format!("module: {} C files, {} to compile (gcc {version} {machine}, {jobs} at once at most)", generated.sources.len(), pending.len()));
     let total = pending.len();
     let total_bytes: u64 = pending.iter().map(|s| std::fs::metadata(code.join(s)).map_or(0, |m| m.len())).sum::<u64>().max(1);
     let t0 = Instant::now();
@@ -358,7 +385,7 @@ pub fn build(source: &Path, work: &Path, out: &Path, amiibo: Option<&Path>, setu
     let p = Progress::begin(status, "link", "Linking the game's code");
     p.at(0.1, "Linking");
     let objects: Vec<String> = generated.sources.iter().map(|s| Path::new(s).with_extension("o").to_string_lossy().replace('\\', "/")).collect();
-    let partial = code.join(FILE);
+    let partial = code.join(file());
     let _ = std::fs::remove_file(&partial);
     // the objects' names in a response file, the compiler run in their
     // folder with relative names (a folder named outside the ANSI code
@@ -366,7 +393,7 @@ pub fn build(source: &Path, work: &Path, out: &Path, amiibo: Option<&Path>, setu
     let rsp: String = objects.iter().map(|o| format!("\"{o}\"\n")).collect();
     std::fs::write(code.join("link.rsp"), rsp).map_err(|e| e.to_string())?;
     let mut gcc = crate::spawn::command(&tools.gcc);
-    gcc.current_dir(&code).args(["-shared", "-static-libgcc", "-o", FILE, "@link.rsp"]);
+    gcc.current_dir(&code).args(["-shared", "-static-libgcc", "-o", file(), "@link.rsp"]);
     let linked = crate::spawn::run(gcc, "link");
     if !linked.is_ok_and(|s| s.success()) || !partial.is_file() {
         return Err("Linking the game's code failed. The log has the linker's messages.".into());
@@ -384,7 +411,7 @@ pub fn build(source: &Path, work: &Path, out: &Path, amiibo: Option<&Path>, setu
         let _ = std::fs::remove_dir_all(work.join("appdata"));
     }
     let took = started.elapsed().as_secs_f32();
-    log::line(format!("module: built {} in {:.0} s ({total} files compiled)", out.join(FILE).display(), took));
+    log::line(format!("module: built {} in {:.0} s ({total} files compiled)", out.join(file()).display(), took));
     let short = if lowered > 0 { format!(" This PC's memory was short for {lowered} of them, compiled with fewer optimisations: the game plays the same.") } else { String::new() };
     Ok(format!("The game's code is built ({total} files compiled, {} min {} s).{short}", (took / 60.0).floor() as u32, (took % 60.0) as u32))
 }
@@ -427,16 +454,16 @@ fn heartbeat(watch: &crate::cc::Watch, done: usize, total: usize, elapsed: std::
 /// a loaded library be renamed, not replaced), then writes its note
 fn install(partial: &Path, out: &Path, note: &Note) -> Result<(), String> {
     std::fs::create_dir_all(out).map_err(|e| format!("{} can't be written ({e})", out.display()))?;
-    let target = out.join(FILE);
+    let target = out.join(file());
     let note_path = out.join(NOTE);
     // no note while the module is being changed: a crash in between leaves
     // a module Haiku.exe builds again
     let _ = std::fs::remove_file(&note_path);
     for n in 0..16 {
-        let _ = std::fs::remove_file(out.join(format!("game.old{n}.dll")));
+        let _ = std::fs::remove_file(out.join(format!("game.old{n}.{}", backup_ext())));
     }
     if target.exists() {
-        let free = (0..16).map(|n| out.join(format!("game.old{n}.dll"))).find(|p| !p.exists()).unwrap_or_else(|| out.join("game.old16.dll"));
+        let free = (0..16).map(|n| out.join(format!("game.old{n}.{}", backup_ext()))).find(|p| !p.exists()).unwrap_or_else(|| out.join(format!("game.old16.{}", backup_ext())));
         std::fs::rename(&target, &free).map_err(|e| format!("The old game's module can't be moved aside ({e}). Close Haiku if it is running and try again."))?;
     }
     std::fs::rename(partial, &target)

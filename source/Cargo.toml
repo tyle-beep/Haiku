@@ -31,6 +31,9 @@ fates-gfx = { path = "gfx" }
 haiku-setup = { path = "../builder" }
 # updscreen: the build screen's lines in haiku.log
 log = "0.4"
+# module loading on unix (dlopen; Windows uses LoadLibraryExW)
+[target.'cfg(unix)'.dependencies]
+libloading = "0.8"
 
 # builder: the exe's icon is made from assets/icon/haiku.png (icon.rs)
 [build-dependencies]
