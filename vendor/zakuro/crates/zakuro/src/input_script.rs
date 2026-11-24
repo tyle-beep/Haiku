@@ -77,6 +77,12 @@ impl Script {
     pub fn open(settings: &Settings) -> Option<Script> {
         let path = PathBuf::from(std::env::var_os("FATES_INPUT_SCRIPT")?);
         let text = std::fs::read_to_string(&path).inspect_err(|error| eprintln!("input script {}: {error}", path.display())).ok()?;
+        Some(Script::from_text(&text, &path.display().to_string(), settings))
+    }
+
+    /// l3toggle: a script from its text, so tests can drive the same
+    /// keyboard and controller mapping without a file.
+    pub fn from_text(text: &str, name: &str, settings: &Settings) -> Script {
         let mut events = Vec::new();
         for (number, line) in text.lines().enumerate() {
             let line = line.split('#').next().unwrap_or("").trim();
@@ -110,8 +116,8 @@ impl Script {
             }
         }
         events.sort_by_key(|(frame, _)| *frame);
-        println!("input script {}: {} events", path.display(), events.len());
-        Some(Script {
+        println!("input script {name}: {} events", events.len());
+        Script {
             events,
             next: 0,
             keyboard: Keyboard::new(settings.keys.clone()),
@@ -120,7 +126,7 @@ impl Script {
             last: Device::Keyboard,
             shown: None,
             clicked: false,
-        })
+        }
     }
 
     /// offline-msg: whether a click came up since the last call.

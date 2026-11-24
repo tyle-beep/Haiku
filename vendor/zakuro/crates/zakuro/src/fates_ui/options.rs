@@ -109,6 +109,8 @@ pub enum Item {
     Vsync,
     FrameRate,
     FpsCap,
+    /// vrrcap: pc.vrr
+    Vrr,
     /// hfr60: pc.smooth_30fps
     Smooth30,
     Filter,
@@ -138,6 +140,8 @@ pub enum Item {
     Mute,
     AudioDevice,
     MuteUnfocused,
+    /// bossmusic: pc.boss_music
+    BossMusic,
     ButtonLayout,
     Glyphs,
     Deadzone,
@@ -200,6 +204,8 @@ pub enum Item {
     SpeakingStyle,
     /// updater: Check for Updates
     CheckUpdates,
+    /// castlegifts: the gifts only online play and StreetPass gave
+    OnlineRewards,
 }
 
 /// what the app has to do after a change.
@@ -243,9 +249,9 @@ fn items(tab: Tab, page: Page, mode: BottomScreen, mods: usize) -> Vec<Item> {
             // native-final: the pure build has one renderer, the native one,
             // so there is no Renderer row to choose with
             #[cfg(feature = "emulation")]
-            Tab::Display => vec![WindowMode, Resolution, Monitor, RenderScale, Renderer, Aspect, WideSides, Vsync, FrameRate, FpsCap, Smooth30, Filter, Msaa, FullDrawDistance, TransitionBlur, ShowFps],
+            Tab::Display => vec![WindowMode, Resolution, Monitor, RenderScale, Renderer, Aspect, WideSides, Vsync, FrameRate, FpsCap, Vrr, Smooth30, Filter, Msaa, FullDrawDistance, TransitionBlur, ShowFps],
             #[cfg(not(feature = "emulation"))]
-            Tab::Display => vec![WindowMode, Resolution, Monitor, RenderScale, Aspect, WideSides, Vsync, FrameRate, FpsCap, Smooth30, Filter, Msaa, FullDrawDistance, TransitionBlur, ShowFps],
+            Tab::Display => vec![WindowMode, Resolution, Monitor, RenderScale, Aspect, WideSides, Vsync, FrameRate, FpsCap, Vrr, Smooth30, Filter, Msaa, FullDrawDistance, TransitionBlur, ShowFps],
             // bottom2: the rows that mean something for the mode chosen
             Tab::Screen => match mode {
                 BottomScreen::Auto => vec![
@@ -257,7 +263,7 @@ fn items(tab: Tab, page: Page, mode: BottomScreen, mods: usize) -> Vec<Item> {
                 BottomScreen::Classic => vec![BottomMode],
             },
             Tab::Audio => {
-                let mut list = vec![Volume, Mute, AudioDevice, MuteUnfocused];
+                let mut list = vec![Volume, Mute, AudioDevice, MuteUnfocused, BossMusic]; // bossmusic
                 crate::haiku_voices::audio_rows(&mut list, Voices, VoicesRestart); // jpvoice
                 list
             }
@@ -281,7 +287,7 @@ fn items(tab: Tab, page: Page, mode: BottomScreen, mods: usize) -> Vec<Item> {
             }
             // qol3: no SpotPass row (its questions are always answered No)
             Tab::Gameplay => {
-                let mut list = vec![GameSpeed, FastSpeed, SkipStory, BoonBane, FreeCamera, FreeCameraStyle, CastleWalk, TargetingLines, GrowthButton, CorrinSAny, KanaGender, DivinePulse, ReturnTitle, ExitDesktop]; // qol; cameras: FreeCamera, FreeCameraStyle, CastleWalk; info-ui: TargetingLines, GrowthButton; supports: CorrinSAny, KanaGender; qol4: ReturnTitle; pulse: DivinePulse
+                let mut list = vec![GameSpeed, FastSpeed, SkipStory, BoonBane, FreeCamera, FreeCameraStyle, CastleWalk, TargetingLines, GrowthButton, CorrinSAny, KanaGender, DivinePulse, OnlineRewards, ReturnTitle, ExitDesktop]; // castlegifts: OnlineRewards; qol; cameras: FreeCamera, FreeCameraStyle, CastleWalk; info-ui: TargetingLines, GrowthButton; supports: CorrinSAny, KanaGender; qol4: ReturnTitle; pulse: DivinePulse
                 super::pulse::gameplay_rows(&mut list, pulse_mode); // pulse: its charges while it is on
                 super::tones::gameplay_rows(&mut list, SpeakingStyle, KanaGender); // tones: after Kana's Gender
                 list
@@ -476,6 +482,12 @@ pub fn row(item: Item, settings: &Settings, env: &Env, armed: Option<Item>, rebi
             let value = if pc.fps_cap == 0 { s("Off") } else { format!("{} FPS", pc.fps_cap) };
             (s("FPS Cap"), Some(value), s("The most frames a second shown, whatever else is set."))
         }
+        // vrrcap
+        Item::Vrr => (
+            s("Variable Refresh"),
+            Some(on_off(pc.vrr)),
+            s("For G-SYNC and FreeSync displays: the frame rate stays just under the refresh rate (162 FPS at 170 Hz), so motion stays even. Off for fixed refresh."),
+        ),
         // hfr60
         Item::Smooth30 => (
             s("Smooth 30 FPS Scenes"),
@@ -531,6 +543,12 @@ pub fn row(item: Item, settings: &Settings, env: &Env, armed: Option<Item>, rebi
             (s("Output Device"), Some(value), s("The speakers or headphones the sound plays on."))
         }
         Item::MuteUnfocused => (s("Mute in Background"), Some(on_off(pc.mute_unfocused)), s("Silence the game while another window is in front.")),
+        // bossmusic
+        Item::BossMusic => (
+            s("Boss Music Stays"),
+            Some(on_off(pc.boss_music)),
+            s("Once you fight a boss, its battle theme keeps playing on the map until the boss is defeated, as in later Fire Emblem games."),
+        ),
         Item::ButtonLayout => (
             s("Button Layout"),
             Some(s(layout_name(pc.button_layout))),
@@ -689,6 +707,16 @@ pub fn row(item: Item, settings: &Settings, env: &Env, armed: Option<Item>, rebi
         ),
         Item::VoicesRestart => (s("Restart with These Voices"), None, s("Restart the game so the voices change. Anything you haven't saved will be lost.")),
         Item::SpeakingStyle => super::tones::row(), // tones
+        // castlegifts
+        Item::OnlineRewards => (
+            s("Online Rewards"),
+            Some(s(if pc.online_rewards { "Unlocked" } else { "Game's Own" })),
+            s(if pc.online_rewards {
+                "Claim each Battle and Visit Bonus once in My Castle's Inbox > Rewards, and get the StreetPass presents from Extras > Presents on the title screen."
+            } else {
+                "The Battle and Visit Bonuses and the StreetPass presents need online play and StreetPass, so they stay locked."
+            }),
+        ),
         Item::ExitDesktop => (s("Exit to Desktop"), None, s("Close the game and return to the desktop. Anything you haven't saved will be lost.")),
         // oneexe
         Item::HaikuSetup => (s("Haiku Setup"), None, s("Add or remove a version of the game, change your dump or DLC, add the Japanese voices, or build the game's code again. The game closes first; Play in Haiku Setup starts it again.")),
@@ -778,6 +806,11 @@ pub fn adjust(item: Item, dir: i32, settings: &mut Settings, env: &Env) -> Optio
         }
         Item::FpsCap => {
             pc.fps_cap = step(&FPS_CAPS, pc.fps_cap, d);
+            Effect::Apply
+        }
+        // vrrcap: from the next picture
+        Item::Vrr => {
+            pc.vrr = !pc.vrr;
             Effect::Apply
         }
         // hfr60: from the next refresh
@@ -887,6 +920,11 @@ pub fn adjust(item: Item, dir: i32, settings: &mut Settings, env: &Env) -> Optio
         }
         Item::MuteUnfocused => {
             pc.mute_unfocused = !pc.mute_unfocused;
+            Effect::Apply
+        }
+        // bossmusic: from the next tick on a map
+        Item::BossMusic => {
+            pc.boss_music = !pc.boss_music;
             Effect::Apply
         }
         Item::ButtonLayout => {
@@ -1023,6 +1061,10 @@ pub fn adjust(item: Item, dir: i32, settings: &mut Settings, env: &Env) -> Optio
             Effect::Apply
         }
         Item::SpeakingStyle => return super::tones::adjust(d), // tones
+        Item::OnlineRewards => {
+            pc.online_rewards = !pc.online_rewards; // castlegifts
+            Effect::Apply
+        }
         // versions: the next version installed, either way
         Item::GameVersion => {
             pc.game_version = crate::haiku_versions::step(&pc.game_version, d);

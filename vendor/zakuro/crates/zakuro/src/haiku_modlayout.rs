@@ -20,6 +20,12 @@
 //!   one. [`code_choices`] lists them, the default first: `code.ips` (what
 //!   Luma3DS loads, and what such readmes mean), else the one the readme
 //!   names. The mod's `code_patch` option (mods.toml) picks another.
+//! - **A romfs/ a folder or two down** (modlayout, GitHub #16). The Selena
+//!   hair mod is a readme, `Mod/romfs/`, `HD Textures (Citra)/` and
+//!   `Extras.../`. A mod's folder with nothing of its own and one folder
+//!   below holding romfs/ uses that one ([`nested_content`]); optional
+//!   folders are never taken, and several plain ones are left to the player
+//!   (the Mods screen says so).
 //!
 //! The loader takes content folders holding `romfs/`, so a mod with loose
 //! roots is laid out once, as hard links (a copy where they can't be made),
@@ -178,6 +184,86 @@ pub fn title_in(folder: &Path, id: &str) -> Option<PathBuf> {
         level = next;
     }
     None
+}
+
+/// modlayout (#16): whether a mod's folder holds game files of its own,
+/// which haiku_mods takes as they are: romfs/ and the folders beside it, a
+/// Luma, Citra or title id folder, Team If's rom/, the game's RomFS folders
+/// (here or a little below), or code.
+fn has_own_layout(folder: &Path) -> bool {
+    const OWN: [&str; 8] = ["romfs", "romfs_ext", "dlc", "exefs", "luma", "titles", "load", "rom"];
+    if OWN.iter().any(|name| find_ci(folder, name).is_some()) || subdirs(folder).iter().any(|(name, _)| is_title_id(name)) {
+        return true;
+    }
+    if crate::haiku_fanpatch::stops_unwrap(folder) || romfs_root(folder) || !loose_roots(folder).is_empty() {
+        return true;
+    }
+    std::fs::read_dir(folder).is_ok_and(|entries| {
+        entries.flatten().any(|entry| {
+            let name = entry.file_name().to_string_lossy().to_ascii_lowercase();
+            entry.path().is_file() && (name.ends_with(".ips") || name.ends_with(".bps") || name == "code.bin" || name == "exheader.bin")
+        })
+    })
+}
+
+/// modlayout: what [`nested_content`] found.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Nested {
+    /// the one folder holding a romfs/ (or romfs_ext/), used as the mod's
+    /// content folder.
+    pub content: Option<PathBuf>,
+    /// when none was taken: the romfs/ folders there are, several (none of
+    /// them optional), or optional ones only.
+    pub left: Vec<PathBuf>,
+    /// whether those left are optional ones only.
+    pub optional_only: bool,
+}
+
+/// modlayout (#16): a mod whose folder holds nothing of its own (see
+/// has_own_layout) but a folder one or two folders down holding a romfs/
+/// (or a romfs_ext/), as the Selena hair mod's `Mod/romfs/` beside its `HD
+/// Textures (Citra)/` and `Extras.../`: that folder is the mod's content
+/// folder when it is the only one. Folders named for optional files (see
+/// `optional`) are never taken, so with one plain folder and optional ones
+/// the plain one is; several plain ones are the player's choice, and none
+/// is taken (`left` says which). A Luma or title id folder down there is
+/// title_in's, found before this.
+pub fn nested_content(folder: &Path) -> Nested {
+    if has_own_layout(folder) {
+        return Nested::default();
+    }
+    let (mut plain, mut optionals) = (Vec::new(), Vec::new());
+    let mut level: Vec<(PathBuf, bool)> = vec![(folder.to_path_buf(), false)];
+    for depth in 1..=DEPTH {
+        let mut next = Vec::new();
+        for (dir, in_optional) in &level {
+            for (name, path) in subdirs(dir) {
+                let lower = name.to_ascii_lowercase();
+                if lower.starts_with('.') || NOT_ROOTS.contains(&lower.as_str()) || is_title_id(&name) {
+                    continue;
+                }
+                let is_optional = *in_optional || optional(&name);
+                let romfs = ["romfs", "romfs_ext"].iter().find_map(|part| find_ci(&path, part).filter(|found| has_game_file(found, 0)));
+                if let Some(romfs) = romfs {
+                    if is_optional {
+                        optionals.push(romfs);
+                    } else {
+                        plain.push(romfs);
+                    }
+                    continue;
+                }
+                if depth < DEPTH {
+                    next.push((path, is_optional));
+                }
+            }
+        }
+        level = next;
+    }
+    match plain.as_slice() {
+        [only] => Nested { content: only.parent().map(Path::to_path_buf), left: Vec::new(), optional_only: false },
+        [] => Nested { content: None, optional_only: !optionals.is_empty(), left: optionals },
+        _ => Nested { content: None, left: plain, optional_only: false },
+    }
 }
 
 /// FNV-1a, for the cache folders' names.

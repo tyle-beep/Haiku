@@ -430,12 +430,15 @@ impl Renderer {
             let (view, sampler) = match (&s.textures[unit], keys[unit]) {
                 (Some((tex, sampling)), Some(hash)) => {
                     let k = (*tex, hash);
+                    let view = self.texture_view(k, decoded.get(&k))?;
                     // gfx-terrain: the unit's sizes and level of detail
-                    let mip = match decoded.get(&k) {
-                        Some(d) if d.levels > 1 => s.mips[unit],
+                    // selena: of the image drawn with, which stays on the
+                    // GPU when its texels have gone from `decoded` (it was
+                    // drawn from its first size alone then)
+                    let mip = match self.textures.get(&k) {
+                        Some(t) if t.levels > 1 => s.mips[unit],
                         _ => Mip { levels: 1, ..Mip::default() },
                     };
-                    let view = self.texture_view(k, decoded.get(&k))?;
                     // hdpacks: a pack's picture, larger than the texture,
                     // sampled over its own sizes
                     let mip = match self.textures.get(&k).and_then(|t| Some((t.levels, crate::hd::shift(t.width, tex.width)?))) {

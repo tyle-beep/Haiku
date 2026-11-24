@@ -208,6 +208,10 @@ const ITEM_LIST: u32 = 0x006D_38D0;
 const SKILLS: u32 = 0x006D_3C5C;
 const CHAPTERS: u32 = 0x006D_379C;
 const TRANSPORTER: u32 = 0x006D_95E8;
+/// castlegifts: AchieveBonus's lists (AchieveBonus::Initialize): +4 the
+/// Battle Bonuses', +8 the Visit Bonuses', each {entries, count} of
+/// {threshold, item id}
+const ACHIEVE_BONUS: u32 = 0x006D_363C;
 const CASTLE: u32 = 0x006D_1998; // Castle*: +8 -> the CastleUserData*
 const GEMSTONES: u32 = 0x006D_1F50; // castle::Gemstone: +4 -> the count
 const FOODS: u32 = 0x006D_1F18; // castle::Food: +4 -> the count
@@ -376,6 +380,8 @@ pub enum Action {
     MaxCastle,
     /// cheats2: every building to its highest level, one by one
     MaxBuildings,
+    /// castlegifts: one more of an item in the convoy
+    GiveItem { item: u16 },
     Chapter { index: usize },
 }
 
@@ -388,6 +394,9 @@ pub struct State {
     pub skills: Vec<SkillEntry>,
     pub chapters: Vec<ChapterEntry>,
     pub items: Vec<(u16, String)>,
+    /// castlegifts: the items My Castle's Inbox > Rewards gives, and how
+    /// ("Battle Bonus", "Visit Bonus")
+    pub bonus_items: HashMap<u16, String>,
     pub seals: Vec<u16>,
     /// cheats2: the Capture skills (SEID_白夜の捕縛術, SEID_暗夜の拘束術)
     pub capture_skills: Vec<u16>,
@@ -711,6 +720,26 @@ fn load_tables(s: &mut State, system: &mut System) {
         s.items.push((id, name));
     }
 
+    // castlegifts: the Inbox's Battle and Visit Bonuses, for the Add Item
+    // list's notes (True Ganglari is "Ganglari" like the story's sword)
+    s.bonus_items.clear();
+    let achieve = zakuro_core::region::us(ACHIEVE_BONUS);
+    for (word, kind) in [(4u32, "Battle Bonus"), (8, "Visit Bonus")] {
+        let list = r32(m, achieve + word);
+        let (entries, count) = (r32(m, list), r32(m, list + 4).min(256));
+        for i in 0..count {
+            let id = r32(m, entries + 8 * i + 4) as u16;
+            if id != 0 {
+                let note = s.bonus_items.entry(id).or_default();
+                if note.is_empty() {
+                    *note = kind.to_string();
+                } else if !note.contains(kind) {
+                    *note = "Battle & Visit Bonus".to_string();
+                }
+            }
+        }
+    }
+
     // chapters
     let table = r32(m, zakuro_core::region::us(CHAPTERS));
     let count = r32(m, zakuro_core::region::us(CHAPTERS) + 4).min(256);
@@ -931,6 +960,14 @@ pub fn frame(system: &mut System) {
                     }
                 }
                 let text = match result {
+                    // castlegifts: Add Item (one item: 2 when it was added)
+                    r if what.starts_with("Convoy: ") => {
+                        if r >= 2 {
+                            what["Convoy: ".len()..].to_string()
+                        } else {
+                            "The convoy is full.".to_string()
+                        }
+                    }
                     // cheats2: one of Max Buildings' steps; the last one says it
                     _ if what.starts_with("My Castle: a building") => String::new(),
                     0xFFFF_FFFF => format!("{what}: the game stopped it."),
@@ -1276,6 +1313,24 @@ fn run(s: &mut State, system: &mut System, action: Action) {
             let _ = r32(m, zakuro_core::region::us(TRANSPORTER));
             hand_marking(s, op::CONVOY, &[99], "The convoy has 99 of every item".to_string(), &[]);
         }
+        // castlegifts: one more of the item in the convoy (99 at most), with
+        // the game's own Item::New and Transporter::Add (cheats.c's convoy)
+        Action::GiveItem { item } => {
+            let name = s.items.iter().find(|(id, _)| *id == item).map_or_else(|| "The item".to_string(), |(_, n)| n.clone());
+            let table = r32(m, zakuro_core::region::us(TRANSPORTER));
+            let have = (0..500).find(|k| r16(m, table + k * 8) == item).map_or(0, |k| r32(m, table + k * 8 + 4));
+            if table == 0 {
+                notice(s, "Load a save first.".to_string());
+                return;
+            }
+            if have >= 99 {
+                notice(s, format!("The convoy already has 99 of {name}."));
+                return;
+            }
+            write(word::ITEMS + 1, item as u32);
+            write(word::ITEMS, 1);
+            hand_marking(s, op::CONVOY, &[have + 1], format!("Convoy: {name} sent to the convoy ({} there).", have + 1), &[]);
+        }
         Action::Chapter { index } => {
             let Some(c) = s.chapters.get(index).cloned() else { return };
             // the save's route follows a chapter of another route (the
@@ -1435,6 +1490,11 @@ fn script_command(system: &mut System, command: &str, frame: u64) {
             }
             "gold" => s.pending.push_back(Action::MaxGold),
             "convoy" => s.pending.push_back(Action::FillConvoy),
+            // castlegifts: `give ID` (an item id: names repeat), one more in the convoy
+            "give" => match rest.trim().parse::<u16>() {
+                Ok(item) => s.pending.push_back(Action::GiveItem { item }),
+                Err(_) => println!("cheats: frame {frame} give wants an item id, not {rest}"),
+            },
             "castle" => s.pending.push_back(Action::MaxCastle),
             // cheats2
             "buildings" => s.pending.push_back(Action::MaxBuildings),

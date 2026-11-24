@@ -304,6 +304,8 @@ pub struct Pacer {
     /// rate the present thread's free grid was last given.
     present_mean: Duration,
     free_rate: f64,
+    /// vrrcap: variable refresh as last logged.
+    vrr_logged: bool,
     /// smooth2: the next present cross-fades the top screen from the
     /// picture before (shown) to the newest, this far (see paced_pass).
     pub crossfade: Option<f32>,
@@ -459,6 +461,59 @@ fn second_largest(v: &std::collections::VecDeque<Duration>) -> Duration {
 /// this, which keeps the loop from spinning when they cost nothing.
 pub const UNCAPPED: f64 = 1000.0;
 
+/// vrrcap: whether the display's refresh rate is variable (G-SYNC,
+/// FreeSync): Options > Display > Variable Refresh, FATES_VRR=1 or 0 over it.
+pub fn vrr_on(pc: &crate::settings::PcSettings) -> bool {
+    match std::env::var("FATES_VRR").as_deref() {
+        Ok("1") => true,
+        Ok("0") => false,
+        _ => pc.vrr,
+    }
+}
+
+/// the rate pictures are presented at (App::hfr_rate, before
+/// ZAKURO_HFR_RATE): `frame_rate` 0 follows the display, `presents` is
+/// whether a presenter shows them (with VSync no more than the display).
+/// vrrcap: taken out of hfr_rate as it was, the variable refresh limit
+/// added, so it can be tested.
+pub fn paced_rate(frame_rate: u32, vsync: bool, fps_cap: u32, vrr: bool, display: f64, presents: bool) -> f64 {
+    let mut rate = if frame_rate == 0 { display } else { frame_rate as f64 };
+    // smooth2: VSync off with no frame rate asked for (Display): as fast
+    // as the PC draws them (UNCAPPED), under the cap if there is one
+    if !vsync && frame_rate == 0 {
+        rate = UNCAPPED;
+    }
+    // with vsync the display shows no more than its refresh rate (the
+    // presenter switches to FIFO at its next picture)
+    if vsync && presents {
+        rate = rate.min(display);
+    }
+    if fps_cap > 0 {
+        rate = rate.min(fps_cap as f64);
+    }
+    // vrrcap: with variable refresh on, never above the rate where the
+    // display stays in its variable range (Display, VSync off with no
+    // cap included: above it the display tears or waits as with VSync)
+    if vrr {
+        rate = rate.min(vrr_limit(display));
+    }
+    rate
+}
+
+/// vrrcap: the highest rate presents go out at with variable refresh on a
+/// display of `hz`: a little under it, as NVIDIA Reflex caps (hz - hz^2 /
+/// 3600: 162 at 170 Hz, 166.5 at 175, 138 at 144, 224 at 240). At the
+/// display's own rate, presents a refresh apart sit at the top of its
+/// variable range, where one a little early waits for the display (as with
+/// VSync) or tears; and the refresh grid Haiku otherwise presents on (DWM's
+/// last refresh and period) means nothing when the display refreshes as
+/// presents come. Under it, on a steady clock of Haiku's own, each picture
+/// is shown as it is presented, one even step of the game's time apart.
+pub fn vrr_limit(hz: f64) -> f64 {
+    let hz = hz.clamp(30.0, 1000.0);
+    hz - hz * hz / 3600.0
+}
+
 /// smooth2: whether frames with feedback post effects are cross-faded
 /// (FATES_CROSSFADE=0 holds them, as before).
 fn crossfades() -> bool {
@@ -582,20 +637,8 @@ impl super::App {
             .and_then(|window| window.current_monitor())
             .and_then(|monitor| monitor.refresh_rate_millihertz())
             .map_or(60.0, |mhz| mhz as f64 / 1000.0);
-        let mut rate = if pc.frame_rate == 0 { display } else { pc.frame_rate as f64 };
-        // smooth2: VSync off with no frame rate asked for (Display): as fast
-        // as the PC draws them (UNCAPPED), under the cap if there is one
-        if !pc.vsync && pc.frame_rate == 0 {
-            rate = UNCAPPED;
-        }
-        // with vsync the display shows no more than its refresh rate (the
-        // presenter switches to FIFO at its next picture)
-        if pc.vsync && self.backend.as_ref().is_some_and(|backend| !matches!(backend, crate::present::Backend::None)) {
-            rate = rate.min(display);
-        }
-        if pc.fps_cap > 0 {
-            rate = rate.min(pc.fps_cap as f64);
-        }
+        let presents = self.backend.as_ref().is_some_and(|backend| !matches!(backend, crate::present::Backend::None));
+        let mut rate = paced_rate(pc.frame_rate, pc.vsync, pc.fps_cap, vrr_on(pc), display, presents);
         if let Ok(forced) = std::env::var("ZAKURO_HFR_RATE") {
             rate = forced.parse().unwrap_or(rate);
         }
@@ -674,9 +717,17 @@ impl super::App {
         // smooth2: with VSync off the present thread paces at the rate asked
         // for (uncapped: UNCAPPED) on a grid of its own
         let vsync = self.settings.pc.vsync;
+        // vrrcap: with variable refresh, on the rate's own steady grid with
+        // VSync on too, never on the display's refresh grid (see vrr_limit)
+        let vrr = vrr_on(&self.settings.pc);
         if let Some(backend) = &mut self.backend {
             backend.set_refresh_hint(display_hz);
-            backend.set_free_rate((!vsync && wanted).then_some(rate));
+            backend.set_vrr(vrr);
+            backend.set_free_rate(((!vsync || vrr) && wanted).then_some(rate));
+        }
+        if vrr != self.hfr.vrr_logged {
+            self.hfr.vrr_logged = vrr;
+            log::info!("vrrcap: variable refresh {}", if vrr { format!("on: at most {:.1} pictures a second, each on a steady clock of its own", vrr_limit(display_hz)) } else { "off".to_owned() });
         }
         self.hfr.free_rate = 0.0;
         if let Some(game) = &mut self.game {
@@ -1726,6 +1777,62 @@ mod tests {
         assert_eq!(cadence(&q(&[3, 3, 3])), 3);
         assert_eq!(cadence(&q(&[1, 1, 1, 9])), 1);
         assert_eq!(cadence(&q(&[])), 1);
+    }
+
+    #[test]
+    fn variable_refresh_stays_under_the_display() {
+        // vrrcap: the reporter's 170 Hz, this PC's 175, and the usual others
+        assert!((super::vrr_limit(170.0) - 161.97).abs() < 0.01);
+        assert!((super::vrr_limit(175.0) - 166.49).abs() < 0.01);
+        assert!((super::vrr_limit(144.0) - 138.24).abs() < 0.01);
+        assert!((super::vrr_limit(60.0) - 59.0).abs() < 0.01);
+        for hz in [48.0, 60.0, 120.0, 144.0, 165.0, 170.0, 175.0, 240.0, 360.0] {
+            let limit = super::vrr_limit(hz);
+            assert!(limit < hz * 0.97 + 1.0 && limit > hz * 0.89, "{hz}: {limit}");
+        }
+    }
+
+    #[test]
+    fn variable_refresh_off_paces_as_before_and_on_stays_under() {
+        // vrrcap: off, the rate is what hfr_rate gave before (written out
+        // here as it was); on, never above the limit, Display and VSync off
+        // uncapped included, and lower rates as asked
+        let before = |frame_rate: u32, vsync: bool, fps_cap: u32, display: f64, presents: bool| {
+            let mut rate = if frame_rate == 0 { display } else { frame_rate as f64 };
+            if !vsync && frame_rate == 0 {
+                rate = super::UNCAPPED;
+            }
+            if vsync && presents {
+                rate = rate.min(display);
+            }
+            if fps_cap > 0 {
+                rate = rate.min(fps_cap as f64);
+            }
+            rate
+        };
+        for &display in &[60.0, 120.0, 144.0, 165.0, 170.0, 175.0, 240.0] {
+            for &frame_rate in &[0u32, 30, 60, 120, 144, 165, 240] {
+                for &fps_cap in &[0u32, 30, 60, 120, 144, 165, 240] {
+                    for vsync in [false, true] {
+                        for presents in [false, true] {
+                            let off = super::paced_rate(frame_rate, vsync, fps_cap, false, display, presents);
+                            assert_eq!(off, before(frame_rate, vsync, fps_cap, display, presents));
+                            let on = super::paced_rate(frame_rate, vsync, fps_cap, true, display, presents);
+                            assert!(on <= super::vrr_limit(display) + 1e-9 && on <= off);
+                            if off < super::vrr_limit(display) {
+                                assert_eq!(on, off, "a rate under the limit stays as asked");
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        // the reporter's 170 Hz: Display with VSync on or off, and 165, go to 162; 144 stays
+        for vsync in [false, true] {
+            assert!((super::paced_rate(0, vsync, 0, true, 170.0, true) - 161.97).abs() < 0.01);
+            assert!((super::paced_rate(165, vsync, 0, true, 170.0, true) - 161.97).abs() < 0.01);
+            assert_eq!(super::paced_rate(144, vsync, 0, true, 170.0, true), 144.0);
+        }
     }
 
     #[test]

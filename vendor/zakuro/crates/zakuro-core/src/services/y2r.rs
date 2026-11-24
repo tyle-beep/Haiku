@@ -674,6 +674,7 @@ pub(crate) fn convert(system: &mut System) {
     system.sync_gpu(output.address, end.wrapping_sub(output.address));
     scatter(system, output, &scratch.out);
     crate::moflexhd::picture_written(output.address, end.wrapping_sub(output.address)); // moflexhd
+    crate::moflexhd::picture_converted(width, lines); // moflexdec: how fast a movie played
     if let Some(started) = converted {
         crate::moflexhd::note(crate::moflexhd::kind::PLACED, started.elapsed().as_nanos() as u64, pixels as u64); // moflexhd
     }

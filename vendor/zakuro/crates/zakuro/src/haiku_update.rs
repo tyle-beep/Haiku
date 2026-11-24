@@ -1226,6 +1226,14 @@ mod tests {
         assert!(!newer("1.4.1", "1.4.1"));
         assert!(!newer("v1.4.1", "1.4.1"));
         assert!(!newer("1.4", "1.4.1"));
+        // release142: 1.4.2 is offered to 1.4.1 and 1.4, and not to itself
+        assert!(newer("1.4.2", "1.4.1"));
+        assert!(newer("v1.4.2", "1.4.1"));
+        assert!(newer("1.4.2", "1.4"));
+        assert!(newer("1.4.1", "1.4"));
+        assert!(!newer("1.4.2", "1.4.2"));
+        assert!(!newer("v1.4.2", "1.4.2"));
+        assert!(!newer("1.4.1", "1.4.2"));
         assert!(newer("1.10", "1.9"));
         assert!(newer("1.4.1-beta.11", "1.4.1-beta.2"));
         assert!(newer("1.4.1-rc.1", "1.4.1-beta.2"));

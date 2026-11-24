@@ -23,6 +23,11 @@
 //! folder a few folders down (a pack of releases); and a folder of several
 //! code patches, one picked by the code_patch option (haiku_modlayout.rs).
 //!
+//! modlayout: and a folder with nothing of its own but one folder a little
+//! below it holding romfs/ (the Selena hair mod's `Mod/romfs/` beside its
+//! `HD Textures (Citra)/`), which is then its content folder, its texture
+//! pack found as before (haiku_modlayout::nested_content).
+//!
 //! codemods: code changes (code.ips, code.bps, code.bin, exheader.bin) and
 //! native plugins (plugin.dll) are code mods, which haiku_codemods
 //! recompiles and loads. Code modules in the RomFS (cro/*.cro, static.crs)
@@ -230,6 +235,11 @@ pub struct ModInfo {
     /// modfix: its folders holding the game's RomFS folders with no romfs/
     /// around them, which its content folder was laid out from
     pub roots: Vec<PathBuf>,
+    /// modlayout: the romfs/ folders a little below its folder of which
+    /// none was used (several, or optional ones only), from its folder, /
+    /// separated, and whether they are optional ones only
+    pub left_romfs: Vec<String>,
+    pub left_optional: bool,
 }
 
 impl ModInfo {
@@ -716,7 +726,8 @@ impl ModList {
                     format!("Still in {zips}. Turn it on and Haiku unpacks it once, into mods/{}.", info.id)
                 };
                 note.push(Note { warning: false, text });
-            } else if !info.has_content() && info.code.is_empty() {
+            } else if !info.has_content() && info.code.is_empty() && info.left_romfs.is_empty() {
+                // (modlayout: one with romfs folders it doesn't use says so below)
                 note.push(Note { warning: true, text: "It has no files for the game (romfs/ or textures/), so it does nothing.".into() });
             }
             if !info.code.is_empty() {
@@ -737,6 +748,16 @@ impl ModList {
                 note.extend(code_notes.iter().cloned());
             }
             note.extend(crate::haiku_fanpatch::notes(info, &self.options_of(index))); // fanpatch
+            // modlayout: romfs folders a little down, none of them used
+            if !info.left_romfs.is_empty() {
+                let list = info.left_romfs.join(", ");
+                let text = if info.left_optional {
+                    format!("Its only romfs folders are optional ones ({list}), so none is used by itself: put the one you want in a mod folder of its own.")
+                } else {
+                    format!("It has several romfs folders ({list}), and Haiku can't tell which one to use, so none is used: put the one you want in a mod folder of its own.")
+                };
+                note.push(Note { warning: true, text });
+            }
             if !on {
                 continue;
             }
@@ -945,7 +966,27 @@ fn read_mod(source: &Path, cache: Option<&Path>) -> ModInfo {
     // fanpatch: a mod for another release: its title (a Japanese title
     // folder, exheader.bin, a Japanese layout), for code_region_problem, and
     // a Japanese layout laid out for this build in the cache
-    let fanpatch = crate::haiku_fanpatch::inspect(&info.id, &folder, &content, titled.is_some(), info.title.as_deref(), cache);
+    let mut fanpatch = crate::haiku_fanpatch::inspect(&info.id, &folder, &content, titled.is_some(), info.title.as_deref(), cache);
+    // modlayout (#16): a folder holding nothing of its own but one folder
+    // with a romfs/ a little below it (the Selena hair mod's Mod/romfs/
+    // beside its HD Textures (Citra)/): that folder is its content folder,
+    // and fanpatch looks at it as it would at the mod's own
+    let mut nested = false;
+    let mut content = content;
+    if fanpatch.is_none() && titled.is_none() && content == folder {
+        let found = crate::haiku_modlayout::nested_content(&folder);
+        let from_folder = |path: &Path| path.strip_prefix(&folder).map_or_else(|_| path.display().to_string(), |rel| rel.display().to_string().replace('\\', "/"));
+        if let Some(dir) = found.content {
+            log::info!("mods: {}'s game files are in {}, used as its own", info.name, from_folder(&dir));
+            fanpatch = crate::haiku_fanpatch::inspect(&info.id, &folder, &dir, false, info.title.as_deref(), cache);
+            content = dir;
+            nested = true;
+        } else if !found.left.is_empty() {
+            info.left_romfs = found.left.iter().map(|path| from_folder(path)).collect();
+            info.left_optional = found.optional_only;
+            log::info!("mods: {} has romfs folders in {}, of which none is used by itself", info.name, info.left_romfs.join(", "));
+        }
+    }
     let content = match &fanpatch {
         Some((fan, content)) => {
             if let Some(title) = fan.title {
@@ -1015,7 +1056,9 @@ fn read_mod(source: &Path, cache: Option<&Path>) -> ModInfo {
     files.dedup();
     info.files = files;
     // the texture pack: textures/, or Citra's textures/<title id>/
-    if let Some(textures) = find_ci(&content, "textures") {
+    // modlayout: a mod's content folder a little below its folder, its
+    // textures/ beside that folder too
+    if let Some(textures) = find_ci(&content, "textures").or_else(|| if nested { find_ci(&folder, "textures") } else { None }) {
         // hdpacks: the title id folder when its pictures are there, not
         // only what was left beside the zips (a readme, an ALT- picture)
         let named = |file: &String| {
@@ -1039,7 +1082,9 @@ fn read_mod(source: &Path, cache: Option<&Path>) -> ModInfo {
     }
     // hdpacks: a Citra texture pack put in as it is (the pictures in the
     // folder, or under its title id folder, with no textures/ around them)
-    if info.textures.is_none() && info.files.is_empty() {
+    // modlayout: also beside the folder its game files were found in (the
+    // Selena hair mod's HD Textures (Citra)/ beside Mod/), as before that
+    if info.textures.is_none() && (info.files.is_empty() || nested) {
         let mut pictures = Vec::new();
         list_files(&folder, "", &mut pictures);
         pictures.retain(|file| {
@@ -1609,6 +1654,158 @@ mod tests {
         let pack_again = at(&again, "pack");
         assert_eq!(again.mods[pack_again].code_files.as_ref().unwrap().patches[0].file_name().unwrap(), "old code patch - endings.ips");
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    /// modlayout (#16): the Selena hair mod's layout, made by hand here: a
+    /// folder of a readme, `Mod/romfs/`, `HD Textures (Citra)/` with Citra's
+    /// pictures (and a folder holding only a text) and `Extras (nothing to
+    /// do with the mod)/` with a picture of its own; as a folder, as
+    /// "Extract to" makes one, and as the zip.
+    #[test]
+    fn a_romfs_a_folder_down_is_the_mods_beside_its_hd_pictures() {
+        let root = folder("nested");
+        let mods = root.join("mods");
+        let layout: [(&str, &[u8]); 8] = [
+            ("Selena/Mod/romfs/bu/uHair_F_ch012_0.bch.lz", b"hair"),
+            ("Selena/Mod/romfs/face/hair/F2_st/hair0.bch.lz", b"face"),
+            ("Selena/Extras (nothing to do with the mod)/This is for you!/You are the fuel of my motivation.png", b"png"),
+            ("Selena/HD Textures (Citra)/Avatar FM (DLC)/note.txt", b"hi"),
+            ("Selena/HD Textures (Citra)/Avatar FB/tex1_128x128_488C6E2E6240A10A_13 (HD optimized).png", b"png"),
+            ("Selena/HD Textures (Citra)/Avatar FB/tex1_256x256_4402992020309B9E_13 (HD optimized).png", b"png"),
+            ("Selena/HD Textures (Citra)/Avatar FB/tex1_512x256_A48CFC4FC98869F5_13 (HD optimized).png", b"png"),
+            ("Selena/Don't ignore me! (Tutorial).txt", b"The romfs folder goes to load/mods/<game id>."),
+        ];
+        for (path, data) in layout {
+            put(&mods, &format!("a-folder/{}", path.trim_start_matches("Selena/")), data);
+            put(&mods, &format!("b-extracted/{path}"), data);
+        }
+        put(&mods, "a-folder/Mod/romfs/face/hair/マイユニ女2_ct/髪0.bch.lz", b"face");
+        std::fs::write(mods.join("c-zip.zip"), zip(&layout)).unwrap();
+        let list = ModList::load(&root, Some(&root.join("userdata")), Some(&root.join("cache")));
+        let ids: Vec<&str> = list.mods.iter().map(|info| info.id.as_str()).collect();
+        assert_eq!(ids, ["a-folder", "b-extracted", "c-zip"]);
+        for (index, info) in list.mods.iter().enumerate() {
+            let mut files = vec!["bu/uhair_f_ch012_0.bch.lz", "face/hair/f2_st/hair0.bch.lz"];
+            if index == 0 {
+                files.push("face/hair/マイユニ女2_ct/髪0.bch.lz");
+            }
+            assert_eq!(info.files, files, "{}: its Mod/romfs/ is its RomFS", info.id);
+            assert!(info.content.as_ref().unwrap().ends_with("Mod"), "{}", info.id);
+            assert!(info.roots.is_empty());
+            // its HD pictures, as before, and not the Extras picture (not
+            // named tex1_)
+            assert_eq!(info.pictures.len(), 3, "{}: {:?}", info.id, info.pictures);
+            assert!(info.pictures.iter().all(|picture| picture.starts_with("textures:tex1_")));
+            assert_eq!(info.textures.as_deref(), info.content.as_ref().unwrap().parent(), "{}: the mod's folder, as before", info.id);
+            assert!(list.can_enable(index));
+            assert!(list.notes[index].is_empty(), "{}: {:?}", info.id, list.notes[index]);
+        }
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    /// modlayout: which romfs folder a little down is taken, and when none
+    /// is: optional ones never (one plain folder beside them is), several
+    /// plain ones are the player's choice (a note says so), a mod's own
+    /// romfs/, code or Luma folder stays what it is.
+    #[test]
+    fn nested_romfs_folders_are_picked_only_when_one_is_clear() {
+        let root = folder("nestedpick");
+        let mods = root.join("mods");
+        // one plain, one optional and an extra beside it: the plain one
+        put(&mods, "a-plain/Pack/Main/romfs/m/@E/A.bin.lz", b"main");
+        put(&mods, "a-plain/Pack/Optional Files/Alt/romfs/m/@E/A.bin.lz", b"alt");
+        put(&mods, "a-plain/Pack/Extras/romfs/m/@E/B.bin.lz", b"extra");
+        put(&mods, "a-plain/Pack/readme.txt", b"hi");
+        // two plain ones, two folders down: none, and a note
+        put(&mods, "b-two/Pack/US/Mod/romfs/m/@E/A.bin.lz", b"us");
+        put(&mods, "b-two/Pack/EU/Mod/romfs/m/@U/A.bin.lz", b"eu");
+        put(&mods, "b-two/Pack/readme.txt", b"pick yours");
+        // optional ones only: none, and a note
+        put(&mods, "c-optional/Pack/Optional Files/X/romfs/m/@E/A.bin.lz", b"x");
+        put(&mods, "c-optional/Pack/Optional Files/Y/romfs/m/@E/A.bin.lz", b"y");
+        put(&mods, "c-optional/Pack/Docs/readme.txt", b"hi");
+        // its own romfs/ wins over one below
+        put(&mods, "d-own/Pack/romfs/m/@E/Own.bin.lz", b"own");
+        put(&mods, "d-own/Pack/Old/romfs/m/@E/Old.bin.lz", b"old");
+        // a code patch of its own: the folder stays its content folder
+        put(&mods, "e-code/Pack/code.ips", b"PATCHEOF");
+        put(&mods, "e-code/Pack/Mod/romfs/m/@E/A.bin.lz", b"x");
+        put(&mods, "e-code/Pack/Other/x.txt", b"hi");
+        // a Luma layout a folder down: title_in's, as before
+        put(&mods, "f-luma/Pack/Mod/luma/titles/0004000000179800/romfs/m/@E/L.bin.lz", b"l");
+        put(&mods, "f-luma/Pack/HD/tex1_8x8_00000000000000AA_13.png", b"png");
+        put(&mods, "f-luma/Pack/readme.txt", b"hi");
+        // textures/ beside the folder of its romfs/
+        put(&mods, "g-textures/Pack/Mod/romfs/m/@E/A.bin.lz", b"x");
+        put(&mods, "g-textures/Pack/textures/tex1_8x8_00000000000000BB_13.png", b"png");
+        // a romfs/ of pictures and text only is no game files
+        put(&mods, "h-empty/Pack/Mod/romfs/readme.txt", b"hi");
+        put(&mods, "h-empty/Pack/Other/x.txt", b"hi");
+        let list = ModList::load(&root, Some(&root.join("userdata")), Some(&root.join("cache")));
+        let at = |id: &str| list.mods.iter().position(|info| info.id == id).unwrap();
+        let (plain, two, optional, own, code, luma, textures, empty) = (at("a-plain"), at("b-two"), at("c-optional"), at("d-own"), at("e-code"), at("f-luma"), at("g-textures"), at("h-empty"));
+        assert_eq!(list.mods[plain].files, ["m/@e/a.bin.lz"]);
+        assert!(list.mods[plain].content.as_ref().unwrap().ends_with("Main"));
+        assert!(list.notes[plain].is_empty(), "{:?}", list.notes[plain]);
+        assert!(list.mods[two].files.is_empty());
+        assert_eq!(list.mods[two].left_romfs, ["EU/Mod/romfs", "US/Mod/romfs"]);
+        assert!(!list.can_enable(two));
+        assert_eq!(list.notes[two].len(), 1, "{:?}", list.notes[two]);
+        assert!(list.notes[two][0].text.starts_with("It has several romfs folders (EU/Mod/romfs, US/Mod/romfs)"), "{:?}", list.notes[two]);
+        assert!(list.mods[optional].files.is_empty());
+        assert!(list.notes[optional][0].text.starts_with("Its only romfs folders are optional ones (Optional Files/X/romfs, Optional Files/Y/romfs)"), "{:?}", list.notes[optional]);
+        assert_eq!(list.mods[own].files, ["m/@e/own.bin.lz"]);
+        assert!(list.mods[own].left_romfs.is_empty());
+        assert!(list.mods[code].files.is_empty(), "the folder with its code stays its content folder");
+        assert_eq!(list.mods[code].code, ["code.ips"]);
+        assert!(list.mods[code].content.as_ref().unwrap().ends_with("Pack"));
+        assert_eq!(list.mods[luma].files, ["m/@e/l.bin.lz"]);
+        assert_eq!(list.mods[luma].title.as_deref(), Some(PROGRAM_ID));
+        assert_eq!(list.mods[textures].files, ["m/@e/a.bin.lz"]);
+        assert_eq!(list.mods[textures].pictures, ["textures:tex1_8x8_00000000000000bb_13.png"]);
+        assert!(list.mods[textures].textures.as_ref().unwrap().ends_with("textures"));
+        assert!(list.mods[empty].files.is_empty() && list.mods[empty].left_romfs.is_empty());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    /// modlayout: Haiku's scan of a root's mods/ (HAIKU_MODLAYOUT_SCAN=<root>,
+    /// its list and cache in the root), each mod's content folder, files,
+    /// pictures, code and notes written to HAIKU_MODLAYOUT_OUT, to compare a
+    /// change's scan of real mods with the one before. Only by hand:
+    /// `cargo test -p zakuro --lib -- --ignored scan_report`
+    #[test]
+    #[ignore]
+    fn scan_report() {
+        use std::fmt::Write as _;
+        let Some(root) = std::env::var_os("HAIKU_MODLAYOUT_SCAN").map(PathBuf::from) else { return };
+        let list = ModList::load(&root, Some(&root.join("userdata")), Some(&root.join("cache")));
+        // a path under the root, / separated, a layout's stamp left out
+        let rel = |path: &Path| -> String {
+            let text = path.strip_prefix(&root).map_or_else(|_| path.display().to_string(), |rel| rel.display().to_string()).replace('\\', "/");
+            text.split('/').map(|part| match part.rsplit_once('-') { Some((name, stamp)) if stamp.len() == 16 && u64::from_str_radix(stamp, 16).is_ok() => format!("{name}-*"), _ => part.to_owned() }).collect::<Vec<_>>().join("/")
+        };
+        let mut out = String::new();
+        for (index, info) in list.mods.iter().enumerate() {
+            let _ = writeln!(out, "== {} ({})", info.id, rel(&info.source));
+            let _ = writeln!(out, "content: {}", info.content.as_deref().map_or("-".to_owned(), rel));
+            let _ = writeln!(out, "title: {}", info.title.as_deref().unwrap_or("-"));
+            let _ = writeln!(out, "roots: {:?}", info.roots.iter().map(|root| rel(root)).collect::<Vec<_>>());
+            let _ = writeln!(out, "can enable: {}, problem: {}", list.can_enable(index), info.problem.as_deref().unwrap_or("-"));
+            let _ = writeln!(out, "code: {:?}", info.code);
+            let _ = writeln!(out, "textures: {}", info.textures.as_deref().map_or("-".to_owned(), rel));
+            let mut pictures = info.pictures.clone();
+            pictures.sort();
+            let _ = writeln!(out, "pictures: {} {pictures:?}", pictures.len());
+            let _ = writeln!(out, "files: {}", info.files.len());
+            for file in &info.files {
+                let _ = writeln!(out, "  {file}");
+            }
+            for note in &list.notes[index] {
+                let _ = writeln!(out, "note{}: {}", if note.warning { " (warning)" } else { "" }, note.text);
+            }
+        }
+        let path = std::env::var_os("HAIKU_MODLAYOUT_OUT").map_or_else(|| root.join("scan.txt"), PathBuf::from);
+        std::fs::write(path, out).unwrap();
     }
 
     #[test]

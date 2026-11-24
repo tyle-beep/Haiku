@@ -1047,6 +1047,24 @@ pub struct PcSettings {
     // picture in between each two of theirs; 60 FPS scenes are untouched.
     // Above 60 every scene is smoothed whatever this says (zakuro hfr.rs).
     pub smooth_30fps: bool,
+    // vrrcap: Options > Display > Variable Refresh: the display has a
+    // variable refresh rate on (G-SYNC, FreeSync). Presents then keep to a
+    // steady clock of their own a little under the display's highest rate
+    // (zakuro hfr.rs vrr_limit), never to its refresh grid: at the top of
+    // the range the display falls out of variable refresh.
+    pub vrr: bool,
+    // castlegifts: Options > Gameplay > Online Rewards: the gifts the 3DS
+    // only gave through online play and StreetPass, given through the
+    // game's own menus (overrides/castlegifts.c): My Castle's Inbox >
+    // Rewards lets each Battle and Visit Bonus be claimed once, and the
+    // title's Extras > Presents downloads its two StreetPass presents.
+    // Off: those stay locked, as on a 3DS with no one to meet online.
+    pub online_rewards: bool,
+    // bossmusic: Options > Audio > Boss Music Stays (GitHub issue #20):
+    // once a boss has been fought, its battle theme stays on as the map's
+    // music until it is defeated or gone, as in Three Houses and Engage.
+    // Off by default (the 3DS's own music). See overrides/bossmusic.c.
+    pub boss_music: bool,
 }
 
 /// versions2: one version's own settings (PcSettings::per_version); each
@@ -1323,6 +1341,9 @@ impl Default for PcSettings {
             per_version: std::collections::BTreeMap::new(), // versions2
             check_updates: true, // updater
             smooth_30fps: true, // hfr60
+            vrr: false, // vrrcap
+            online_rewards: true, // castlegifts
+            boss_music: false, // bossmusic
         }
     }
 }

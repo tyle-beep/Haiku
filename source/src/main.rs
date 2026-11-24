@@ -132,6 +132,17 @@ extern "C" {
     static mut haiku_transition_unblurred: u32;
     // drawdist: overrides/drawdist.c, Full Draw Distance
     static mut drawdist_full: u32;
+    // castlegifts: overrides/castlegifts.c, Online Rewards
+    static mut castlegifts_on: u32;
+    static mut castlegifts_unlocked: u32;
+    static mut castlegifts_presents: u32;
+    // bossmusic: overrides/bossmusic.c, Boss Music Stays, and its counts
+    static mut bossmusic_on: u32;
+    static mut bossmusic_engaged: u32;
+    static mut bossmusic_kept: u32;
+    static mut bossmusic_played: u32;
+    static mut bossmusic_held: u32;
+    static mut bossmusic_back: u32;
     static mut drawdist_batch: fates_gfx::drawdist::Batch;
 }
 
@@ -186,6 +197,15 @@ fn qol_word(word: zakuro::qol::Word) -> *mut u32 {
             Word::TransitionBlur => addr_of_mut!(haiku_transition_blur), // transblur
             Word::TransitionUnblurred => addr_of_mut!(haiku_transition_unblurred),
             Word::FullDrawDistance => addr_of_mut!(drawdist_full), // drawdist
+            Word::OnlineRewards => addr_of_mut!(castlegifts_on), // castlegifts
+            Word::RewardsUnlocked => addr_of_mut!(castlegifts_unlocked),
+            Word::PresentsGiven => addr_of_mut!(castlegifts_presents),
+            Word::BossMusic => addr_of_mut!(bossmusic_on), // bossmusic
+            Word::BossEngaged => addr_of_mut!(bossmusic_engaged),
+            Word::BossKept => addr_of_mut!(bossmusic_kept),
+            Word::BossPlayed => addr_of_mut!(bossmusic_played),
+            Word::BossHeld => addr_of_mut!(bossmusic_held),
+            Word::BossBack => addr_of_mut!(bossmusic_back),
         }
     }
 }

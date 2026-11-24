@@ -150,10 +150,12 @@ const SCENES: &[Scene] = &[
     // wide-ui: the Ultrawide Sides row (after Aspect Ratio; one row later with the Renderer row)
     Scene { name: "options-sides", setup: |f, _, _| options_at(f, 0, Page::Main, if cfg!(feature = "emulation") { 6 } else { 5 }) },
     // transblur: the Battle Transition Blur row (after Full Draw Distance;
-    // hfr60: one row later with Smooth 30 FPS Scenes)
-    Scene { name: "options-transition-blur", setup: |f, _, _| options_at(f, 0, Page::Main, if cfg!(feature = "emulation") { 14 } else { 13 }) },
-    // hfr60: the Smooth 30 FPS Scenes row (after FPS Cap)
-    Scene { name: "options-smooth30", setup: |f, _, _| options_at(f, 0, Page::Main, if cfg!(feature = "emulation") { 10 } else { 9 }) },
+    // hfr60: one row later with Smooth 30 FPS Scenes; vrrcap: and Variable Refresh)
+    Scene { name: "options-transition-blur", setup: |f, _, _| options_at(f, 0, Page::Main, if cfg!(feature = "emulation") { 15 } else { 14 }) },
+    // hfr60: the Smooth 30 FPS Scenes row (after FPS Cap; vrrcap: and Variable Refresh)
+    Scene { name: "options-smooth30", setup: |f, _, _| options_at(f, 0, Page::Main, if cfg!(feature = "emulation") { 11 } else { 10 }) },
+    // vrrcap: the Variable Refresh row (after FPS Cap)
+    Scene { name: "options-vrr", setup: |f, _, _| options_at(f, 0, Page::Main, if cfg!(feature = "emulation") { 10 } else { 9 }) },
     // gfx-hfr: the Renderer row, set to the emulated GPU (native-final:
     // development builds only; the pure build has no such row)
     #[cfg(feature = "emulation")]
@@ -452,7 +454,21 @@ const SCENES: &[Scene] = &[
         s.pc.cheats.capture_recruit = true;
         options_at(f, 7, Page::Cheats(1), 9);
     } },
-    Scene { name: "cheats-items-buildings", setup: |f, _, _| options_at(f, 7, Page::Cheats(2), 4) },
+    Scene { name: "cheats-items-buildings", setup: |f, _, _| options_at(f, 7, Page::Cheats(2), 5) },
+    // castlegifts: the Gameplay tab's Online Rewards row, on and off; the
+    // Cheats tab's Add an Item, and its list on True Ganglari (the second
+    // "Ganglari", noted Battle Bonus)
+    Scene { name: "options-online-rewards", setup: |f, _, _| options_at(f, 4, Page::Main, 12) },
+    Scene { name: "options-online-rewards-off", setup: |f, _, s| {
+        s.pc.online_rewards = false;
+        options_at(f, 4, Page::Main, 12);
+    } },
+    Scene { name: "cheats-items-give", setup: |f, _, _| options_at(f, 7, Page::Cheats(2), 1) },
+    Scene { name: "cheats-item-list", setup: |f, _, _| {
+        super::cheats::snapshot_pick(super::cheats::PickKind::Item);
+        let row = crate::cheats::with_state(|s| s.items.iter().rposition(|(_, n)| n == "Ganglari").unwrap_or(0));
+        options_at(f, 7, Page::Pick, row);
+    } },
     Scene { name: "cheats-story", setup: |f, _, s| {
         s.pc.cheats.support_log = true;
         options_at(f, 7, Page::Cheats(3), 0);

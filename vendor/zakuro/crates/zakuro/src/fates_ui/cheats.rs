@@ -52,6 +52,7 @@ mod id {
     pub const SEALS: u16 = 62;
     pub const CASTLE: u16 = 63;
     pub const BUILDINGS: u16 = 64; // cheats2
+    pub const GIVE_ITEM: u16 = 65; // castlegifts
     pub const LOG: u16 = 80;
     pub const SUPPORT_A: u16 = 81;
     pub const SUPPORT_B: u16 = 82;
@@ -71,6 +72,7 @@ pub enum PickKind {
     SupportA,
     SupportB,
     Chapter,
+    Item, // castlegifts
 }
 
 /// what the tab remembers between frames
@@ -118,7 +120,7 @@ pub fn items(group: u8) -> Vec<Item> {
             v
         }
         1 => vec![CRIT, HIT, MISS, GOD, OHKO, AGAIN, MOVE, VEINS, VEIN_REUSE, CAPTURE, TURN, EXP_MULT, GROWTH, WEAPONS],
-        2 => vec![GOLD, CONVOY, SEALS, CASTLE, BUILDINGS],
+        2 => vec![GOLD, GIVE_ITEM, CONVOY, SEALS, CASTLE, BUILDINGS], // castlegifts: GIVE_ITEM
         _ => vec![LOG, SUPPORT_A, SUPPORT_B, SUPPORT_RANK, SUPPORT_SET, CHAPTER],
     };
     list.into_iter().map(Item::Cheat).collect()
@@ -143,6 +145,7 @@ pub fn title(page: Page) -> &'static str {
             Some(PickKind::Character) => "Add a Character",
             Some(PickKind::SupportA) | Some(PickKind::SupportB) => "Choose a Unit",
             Some(PickKind::Chapter) => "Chapter Select",
+            Some(PickKind::Item) => "Add an Item", // castlegifts
             None => "Cheats",
         },
         _ => "Cheats",
@@ -173,7 +176,7 @@ pub fn row(cid: u16, settings: &Settings) -> (String, Option<String>, String) {
         let help = [
             "Change a unit's class, stats, level, weapon ranks and skills, or add any character to your army.",
             "Critical hits, hit rates, damage, movement, growth and EXP, in the game's own battle calculation.",
-            "Gold, the convoy, seals and My Castle's resources.",
+            "Gold, any item, the convoy, seals and My Castle's resources.", // castlegifts: any item
             "Every support conversation in the Support Log, support levels, and chapter select.",
             "Save and load the whole game at any moment, in eight slots, with quick save and quick load keys.", // pulse
         ][g];
@@ -249,6 +252,8 @@ pub fn row(cid: u16, settings: &Settings) -> (String, Option<String>, String) {
         id::GROWTH => (s("Perfect Level-Ups"), on_off(c.perfect_growth), s("Every stat goes up on each level-up, as far as its cap allows.")),
         id::WEAPONS => (s("Any Class, Any Weapon"), on_off(c.every_weapon), s("Your units can use every weapon type. Use Max Weapon Ranks to wield the strongest.")),
         id::GOLD => (s("Max Gold"), host::with_state(|s| s.in_game.then(|| format!("{}", s.gold))), s("Set your gold to 999,999.")),
+        // castlegifts
+        id::GIVE_ITEM => (s("Add an Item"), None, s("Any item the game has, one at a time, into the convoy: the online Battle and Visit Bonuses too.")),
         id::CONVOY => (s("Fill the Convoy"), None, s("99 of every item in the convoy.")),
         id::CASTLE => (s("Max My Castle Resources"), None, s("99 of every ore and food, and 99 Dragon Vein Points to build and upgrade with.")),
         id::BUILDINGS => (
@@ -289,6 +294,7 @@ fn pick_help(kind: Option<PickKind>) -> String {
         Some(PickKind::SkillSlot) => "A slot replaces the skill there; Extra adds it beyond the five.",
         Some(PickKind::Character) => "They join with their own class, level and items, as when they join in the story.",
         Some(PickKind::Chapter) => "The chapter starts from its opening and Battle Preparations. Choose in My Castle.",
+        Some(PickKind::Item) => "One more of it goes to the convoy each time you press, up to 99. The note says which Inbox reward it was online.", // castlegifts
         _ => "Press to choose.",
     }
     .to_owned()
@@ -452,6 +458,9 @@ fn open_pick(kind: PickKind, from: (u8, usize)) -> Press {
                 ((label, (!route.is_empty()).then(|| route.to_owned())), i as u32)
             })
             .unzip(),
+        // castlegifts: every item the game names, in its own order (by
+        // kind), noted when the Inbox's online rewards gave it
+        PickKind::Item => s.items.iter().map(|(id, name)| ((name.clone(), s.bonus_items.get(id).cloned()), *id as u32)).unzip(),
     });
     with_ui(|ui| {
         ui.pick = Some(kind);
@@ -504,6 +513,11 @@ pub fn press(cid: u16, page: Page, row: usize) -> Press {
                 let text = format!("Add {label} to your army? They join as they would in the story. Save to keep them.");
                 with_ui(|ui| ui.confirm = Some((text, true, Action::AddCharacter { person: value as u16 })));
             }
+            Some(PickKind::Item) => {
+                // castlegifts: stays on the list, so more can be added
+                host::request(Action::GiveItem { item: value as u16 });
+                return Press::Nothing;
+            }
             Some(PickKind::Chapter) => {
                 let in_castle = host::with_state(|s| s.in_castle);
                 if !in_castle {
@@ -532,6 +546,7 @@ pub fn press(cid: u16, page: Page, row: usize) -> Press {
         id::SUPPORT_A => open_pick(PickKind::SupportA, from),
         id::SUPPORT_B => open_pick(PickKind::SupportB, from),
         id::CHAPTER => open_pick(PickKind::Chapter, from),
+        id::GIVE_ITEM => open_pick(PickKind::Item, from), // castlegifts
         id::MAX_LEVEL => {
             if let Some(u) = unit {
                 host::request(Action::MaxLevel { unit: u.addr });

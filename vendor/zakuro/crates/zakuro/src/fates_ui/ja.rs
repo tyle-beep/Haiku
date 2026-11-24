@@ -213,6 +213,9 @@ const TEXTS: &[(&str, &str)] = &[
     ("How many frames a second are shown. Display matches its refresh rate, or with VSync off and no cap, as many as the PC can draw.", "1秒間に表示するフレーム数です。「画面」はディスプレイのリフレッシュレートに合わせます。垂直同期OFFで上限なしなら、PCが描ける限り表示します。"),
     ("FPS Cap", "FPS上限"),
     ("The most frames a second shown, whatever else is set.", "ほかの設定にかかわらず、1秒間に表示するフレーム数の上限です。"),
+    // vrrcap
+    ("Variable Refresh", "可変リフレッシュレート"),
+    ("For G-SYNC and FreeSync displays: the frame rate stays just under the refresh rate (162 FPS at 170 Hz), so motion stays even. Off for fixed refresh.", "G-SYNCやFreeSyncのディスプレイ用です。フレームレートをリフレッシュレートより少し低く保ち(170Hzで162FPS)、動きを均一にします。固定リフレッシュレートではOFFにします。"),
     ("Filtering", "フィルター"),
     ("How the picture is scaled to the window: smooth, sharp, or pixels.", "映像をウィンドウに合わせて拡大する方法です。なめらか、くっきり、ドットから選びます。"),
     // hfr60
@@ -341,6 +344,11 @@ const TEXTS: &[(&str, &str)] = &[
     ("Game's Own", "ゲームどおり"),
     ("Corrin can reach S rank and marry anyone Corrin has a support with, of either gender. Takes effect the next time the game starts.", "カムイは支援のある相手なら性別を問わず、Sランクになり結婚できます。次にゲームを起動したときに反映されます。"),
     ("Corrin's S ranks are the game's own. Takes effect the next time the game starts.", "カムイのSランクはゲームどおりです。次にゲームを起動したときに反映されます。"),
+    // castlegifts: Online Rewards
+    ("Online Rewards", "通信の特典"),
+    ("Unlocked", "受け取れる"),
+    ("Claim each Battle and Visit Bonus once in My Castle's Inbox > Rewards, and get the StreetPass presents from Extras > Presents on the title screen.", "マイキャッスルの受信ボックス > 実績ボーナスで、戦闘実績と訪問実績のボーナスをそれぞれ1回ずつ受け取れます。タイトル画面のプレゼントで、すれちがいプレゼントも受信できます。"),
+    ("The Battle and Visit Bonuses and the StreetPass presents need online play and StreetPass, so they stay locked.", "戦闘実績・訪問実績のボーナスとすれちがいプレゼントは、通信とすれちがい通信が必要なため受け取れません。"),
     ("Kana's Gender", "カンナの性別"),
     ("Ask", "毎回選ぶ"),
     ("Male", "男性"),

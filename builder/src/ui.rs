@@ -1339,6 +1339,9 @@ mod imp {
         let _ = std::fs::create_dir_all(&paths.work);
         log::open(&paths.log_file(), false);
         log::line(format!("Haiku's setup started ({start:?})"));
+        if let Some(wine) = crate::cc::wine() {
+            log::line(format!("running under Wine/Proton ({wine})")); // buildslow (issue #17)
+        }
         for line in crate::layout::sweep(&paths.root) {
             log::line(line); // versions2: what a removed version left
         }

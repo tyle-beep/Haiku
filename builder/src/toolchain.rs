@@ -149,13 +149,25 @@ impl Toolchain {
     }
 }
 
-/// how many compilers to run at once at most: HAIKU_SETUP_JOBS, else all
-/// but two of the cores (compile32: cc.rs starts fewer when the memory
+/// how many compilers to run at once at most: HAIKU_SETUP_JOBS, else from
+/// the cores Haiku may use (compile32: cc.rs starts fewer when the memory
 /// free doesn't hold them).
 pub fn jobs() -> usize {
     if let Some(n) = std::env::var("HAIKU_SETUP_JOBS").ok().and_then(|v| v.trim().parse::<usize>().ok()).filter(|&n| n > 0) {
         return n;
     }
-    let cores = std::thread::available_parallelism().map_or(4, |n| n.get());
-    cores.saturating_sub(2).max(1)
+    jobs_for(crate::cc::cores())
+}
+
+/// buildslow (issue #13): all but two of the cores left a 2-core PC one
+/// compiler (a Celeron J3355 compiled 255 files one by one, its slowest
+/// beside nothing). The compilers run below normal, so what the player
+/// does still comes first: a PC with 1-2 cores uses them all, 3-4 all but
+/// one, more all but two.
+pub fn jobs_for(cores: usize) -> usize {
+    match cores {
+        0..=2 => cores.max(1),
+        3..=4 => cores - 1,
+        _ => cores - 2,
+    }
 }

@@ -164,6 +164,8 @@ pub struct VulkanPresenter {
     present_at: Option<std::time::Instant>,
     /// smooth2: see set_free_rate.
     free_rate: Option<f64>,
+    /// vrrcap: see set_vrr.
+    vrr: bool,
     /// mapjit: the swapchain presents in mailbox mode (no tearing)
     mailbox: bool,
     /// smooth2: see set_crossfade; the frame's own, once written.
@@ -509,6 +511,7 @@ impl VulkanPresenter {
             pacer,
             present_at: None,
             free_rate: None,
+            vrr: false, // vrrcap
             mailbox: false, // mapjit
             crossfade: None,
             fading: None,
@@ -768,6 +771,14 @@ impl VulkanPresenter {
         self.apply_free_period(); // mapjit
     }
 
+    /// vrrcap: the display's refresh rate is variable (G-SYNC, FreeSync):
+    /// the free grid is kept at any rate, never locked to the display's
+    /// refresh grid: the display refreshes as presents come, so that grid
+    /// leads nothing. Takes effect at the next set_free_rate.
+    pub fn set_vrr(&mut self, on: bool) {
+        self.vrr = on;
+    }
+
     /// mapjit: the free grid's period, or none for the display's refresh
     /// grid. With VSync off at the display's rate or above and presents that
     /// do not tear (mailbox), each refresh shows the newest picture handed
@@ -792,12 +803,7 @@ impl VulkanPresenter {
         let monitor = pacer.monitor_period();
         let dwm = pacer.display_period();
         let agree = (dwm.as_secs_f64() / monitor.as_secs_f64().max(1e-6) - 1.0).abs() < 0.01;
-        let locked = on && self.mailbox && self.free_rate.is_some_and(|rate| rate * monitor.as_secs_f64() >= 0.95);
-        pacer.set_free_period(match (locked, agree) {
-            (true, true) => None,
-            (true, false) => Some(monitor),
-            (false, _) => self.free_rate.map(|rate| std::time::Duration::from_secs_f64(1.0 / rate)),
-        });
+        pacer.set_free_period(free_period(on, self.vrr, self.mailbox, self.free_rate, monitor, agree));
     }
 
     /// smooth2: the next present draws `picture` over the top screen at
@@ -2029,5 +2035,45 @@ impl Screen {
             device.free_memory(self.staging_memory, None);
         }
         let _ = self.staging_size;
+    }
+}
+
+/// mapjit: the present thread's free grid (see apply_free_period): none for
+/// DWM's refresh grid, else the period of a grid of its own. `on`:
+/// FATES_VSYNC_OFF_GRID; `agree`: DWM's period is the window's monitor's.
+/// vrrcap: taken out of apply_free_period as it was; with variable refresh
+/// (`vrr`) never locked to the display's refresh grid (see set_vrr).
+fn free_period(on: bool, vrr: bool, mailbox: bool, free_rate: Option<f64>, monitor: std::time::Duration, agree: bool) -> Option<std::time::Duration> {
+    let locked = on && !vrr && mailbox && free_rate.is_some_and(|rate| rate * monitor.as_secs_f64() >= 0.95);
+    match (locked, agree) {
+        (true, true) => None,
+        (true, false) => Some(monitor),
+        (false, _) => free_rate.map(|rate| std::time::Duration::from_secs_f64(1.0 / rate)),
+    }
+}
+
+#[cfg(test)]
+mod vrrcap_tests {
+    use std::time::Duration;
+
+    #[test]
+    fn variable_refresh_never_locks_to_the_display_grid() {
+        let monitor = Duration::from_secs_f64(1.0 / 170.0);
+        // as before without it: VSync off at Display (uncapped) or 165 on a
+        // 170 Hz display locks to DWM's grid, 144 keeps its own
+        assert_eq!(super::free_period(true, false, true, Some(1000.0), monitor, true), None);
+        assert_eq!(super::free_period(true, false, true, Some(165.0), monitor, true), None);
+        assert_eq!(super::free_period(true, false, true, Some(165.0), monitor, false), Some(monitor));
+        assert_eq!(super::free_period(true, false, true, Some(144.0), monitor, true), Some(Duration::from_secs_f64(1.0 / 144.0)));
+        // with it, a grid of the rate's own at every rate, mailbox or FIFO
+        for rate in [60.0, 144.0, 161.97, 165.0] {
+            for mailbox in [false, true] {
+                for agree in [false, true] {
+                    assert_eq!(super::free_period(true, true, mailbox, Some(rate), monitor, agree), Some(Duration::from_secs_f64(1.0 / rate)));
+                }
+            }
+        }
+        // no free rate (VSync on without it): DWM's grid, as before
+        assert_eq!(super::free_period(true, false, false, None, monitor, true), None);
     }
 }

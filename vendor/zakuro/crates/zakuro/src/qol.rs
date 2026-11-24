@@ -87,6 +87,17 @@ pub enum Word {
     TransitionUnblurred,
     // drawdist: overrides/drawdist.c, Full Draw Distance
     FullDrawDistance,
+    // castlegifts: overrides/castlegifts.c, Online Rewards
+    OnlineRewards,
+    RewardsUnlocked,
+    PresentsGiven,
+    // bossmusic: overrides/bossmusic.c, Boss Music Stays, and its counts
+    BossMusic,
+    BossEngaged,
+    BossKept,
+    BossPlayed,
+    BossHeld,
+    BossBack,
 }
 
 /// what the game build exposes of overrides/qol.c, registered by the
@@ -145,6 +156,18 @@ pub fn full_draw_distance(pc: &PcSettings) -> bool {
     env_flag("FATES_DRAWDIST").unwrap_or(pc.full_draw_distance)
 }
 
+/// castlegifts: whether the online-only gifts are given (Online Rewards):
+/// the setting, or FATES_ONLINE_REWARDS.
+pub fn online_rewards(pc: &PcSettings) -> bool {
+    env_flag("FATES_ONLINE_REWARDS").unwrap_or(pc.online_rewards)
+}
+
+/// bossmusic: whether a fought boss's theme stays on as the map's music:
+/// the setting, or FATES_BOSS_MUSIC (read by overrides/bossmusic.c itself).
+pub fn boss_music(pc: &PcSettings) -> bool {
+    env_flag("FATES_BOSS_MUSIC").unwrap_or(pc.boss_music)
+}
+
 /// puts the game-level options to use, at start and after each change.
 pub fn apply(pc: &PcSettings) {
     if HOOKS.get().is_none() {
@@ -179,6 +202,10 @@ pub fn apply(pc: &PcSettings) {
     write(Word::TransitionBlur, transition_blur(pc) as u32);
     // drawdist: Full Draw Distance (FATES_DRAWDIST=1/0 for tests)
     write(Word::FullDrawDistance, full_draw_distance(pc) as u32);
+    // castlegifts: Online Rewards (FATES_ONLINE_REWARDS=1/0 for tests)
+    write(Word::OnlineRewards, online_rewards(pc) as u32);
+    // bossmusic: Boss Music Stays (FATES_BOSS_MUSIC=1/0 for tests)
+    write(Word::BossMusic, boss_music(pc) as u32);
     crate::qol4::apply(); // qol4: Options in the Main Menu, the map menu's items, no extra data message
     log::info!("qol: skip story {story}, SpotPass questions {}", if spotpass { "answered No" } else { "asked" });
 }
@@ -197,7 +224,19 @@ pub fn summary() -> Option<String> {
         r(Word::TitlePlainShown)
     ) + &crate::qol4::summary() // qol4
         // transblur
-        + &format!(", transition frames without the zoom blur {}", r(Word::TransitionUnblurred)))
+        + &format!(", transition frames without the zoom blur {}", r(Word::TransitionUnblurred))
+        // castlegifts
+        + &format!(", online rewards: bonuses shown claimable {}, presents given {}", r(Word::RewardsUnlocked), r(Word::PresentsGiven))
+        // bossmusic
+        + &format!(
+            "\nbossmusic: on {}, bosses engaged {}, themes kept after a battle {}, played in the map BGM's place {}, battles held {}, back to the map BGM {}",
+            r(Word::BossMusic),
+            r(Word::BossEngaged),
+            r(Word::BossKept),
+            r(Word::BossPlayed),
+            r(Word::BossHeld),
+            r(Word::BossBack)
+        ))
 }
 
 // ---------------------------------------------------------------------------

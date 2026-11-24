@@ -623,6 +623,7 @@ us	jpn	method	use	note	where
 0x001EA1E4	0x001EB800	func-same	override	FaceCutInTexFile::Create(const Unit*)	overrides/randomizer.c
 0x001EBA84	0x001ED0A0	func-exact	override	GameDialogItemNo::ACall(void)	overrides/qol.c
 0x001EE94C	0x001EFF5C	func-same	hint+	ProcParamSetting::Draw(void)	vendor/3dsrecomp/hints.txt
+0x001EEF4C	0x001F055C	func-same	override	ProcSoundMonitor::Persistent(void)	overrides/bossmusic.c
 0x001F0006	0x001F1616	func-same	code	TalkCodeDisposer::TalkCodeDisposer(void)	vendor/zakuro/crates/zakuro-core/src/pcos/uds.rs
 0x001F00C0	0x001F16D0	func-same	code	TalkCodeDisposer::TalkCodeDisposer(void)	vendor/zakuro/crates/zakuro-core/src/services/cam.rs
 0x001F1A60	0x001F3070	func-same	override	TransitionCamera::Tick(void)	overrides/transblur.c
@@ -969,6 +970,14 @@ us	jpn	method	use	note	where
 0x0038C224	0x0038D284	func-same	hint+	map::Actor::ChargeGoBind(ProcInst*,unsigned char)	vendor/3dsrecomp/hints.txt
 0x0038FC5C	0x00390CBC	func-same	override	map::Panel::Route::Draw(const ICamera*)	overrides/info_ui.c
 0x00394848	0x003958A8	func-same	override	map::Panel::Finalize(void)	overrides/info_ui.c
+0x003977DC	0x0039883C	func-same	override	map::sound::SetBattleInfo(const void*,bool)	overrides/bossmusic.c
+0x00397E68	0x00398EC8	func-same	override	map::sound::OnFadeOutBattle(void)	overrides/bossmusic.c
+0x00398388	0x003993E8	func-same	override	map::sound::anonymous_namespace::ProcBGMFader::Create(ProcInst*,map::sound::anonymous_namespace::ProcBGMFader::Type,int)	overrides/bossmusic.c
+0x003986C0	0x00399720	func-same	override	map::sound::anonymous_namespace::setTrackVolume(unsigned int,float,int)	overrides/bossmusic.c
+0x00398C68	0x00399CC8	func-same	override	map::sound::anonymous_namespace::playBGM(const char*,int,long,int)	overrides/bossmusic.c
+0x00398DA4	0x00399E04	func-same	override	map::sound::anonymous_namespace::stopBGM(int)	overrides/bossmusic.c
+0x00398E58	0x00399EB8	func-same	code	map::sound::Bgm::Map::Play(int)	overrides/bossmusic.c
+0x003998C4	0x0039A924	func-same	override	map::sound::Setup(void)	overrides/bossmusic.c
 0x0039AAA8	0x0039BB08	func-same	override	map::trick::Data::Done(ProcInst*)	overrides/cheats.c
 0x0039AB40	0x0039BBA0	func-same	code	map::trick::Data::Enable(ProcInst*)	overrides/cheats.c
 0x0039B6D0	0x0039C730	func-same	code	map::Camera::Initialize(void)	overrides/widescreen.c
@@ -1034,6 +1043,7 @@ us	jpn	method	use	note	where
 0x003E1894	0x003E2794	func-same	hint+	game::graphics::GameCursor::UpdateBottom(void)	vendor/3dsrecomp/hints.txt
 0x003E5B00	0x003E69FC	func-same	hint+	game::graphics::SplitWindow::GetWindowItemH(void)	vendor/3dsrecomp/hints.txt
 0x003ED44C	0x003EE340	func-same	hint+	link::PiaSession::Startup(const nn::pia::transport::Station::PlayerName&,const nn::pia::common::SignatureSetting&)	vendor/3dsrecomp/hints.txt
+0x003EE920	0x003EF810	func-same	override	link::ProcPresent::ProcUpdate::End(void)	overrides/castlegifts.c
 0x003EF0A0	0x003EFF8C	func-same	hint+	link::NexDataStore::GetRatingAsync(const unsigned long long&,nn::nex::qMap<signed char,nn::nex::DataStoreRatingInfo>*,unsigned long long)	vendor/3dsrecomp/hints.txt
 0x003EF248	0x003F0134	func-same	hint+	link::NexDataStore::RateObjectAsync(const nn::nex::DataStoreRatingTarget&,const nn::nex::DataStoreRateObjectParam&,nn::nex::DataStoreRatingInfo*)	vendor/3dsrecomp/hints.txt
 0x003EF350	0x003F023C	func-same	hint+	link::NexDataStore::SearchObjectAsync(const nn::nex::DataStoreSearchParam&,nn::nex::DataStoreSearchResult*)	vendor/3dsrecomp/hints.txt
@@ -1153,8 +1163,11 @@ us	jpn	method	use	note	where
 0x0041F1AC	0x0041FA08	func-same	hint+	Movie::IsSkipped(void)	vendor/3dsrecomp/hints.txt
 0x0041FB14	0x00420370	func-same	hint+	Sound::DisableBGMCommand(void)	vendor/3dsrecomp/hints.txt
 0x004200FC	0x00420958	func-same	code	Sound::SEPlay(const char*)	overrides/snd_native.c
+0x004201A0	0x004209FC	func-same	override	Sound::BGMPlay(const char*,int,nw::snd::SoundStartable*)	overrides/bossmusic.c
+0x00420244	0x00420AA0	func-same	override	Sound::BGMStop(int)	overrides/bossmusic.c
 0x004203C0	0x00420C1C	func-same	hint+	Sound::BGMPause(int)	vendor/3dsrecomp/hints.txt
 0x00420808	0x00421064	func-same	hint+	Sound::BGMResume(int)	vendor/3dsrecomp/hints.txt
+0x00420858	0x004210B4	func-same	code	Sound::BGMVolume(int,int)	overrides/bossmusic.c
 0x00420B74	0x004213D0	func-same	override	Title::Create(ProcInst*)	overrides/qol.c,vendor/zakuro/crates/zakuro/src/haiku_codemods.rs,vendor/zakuro/crates/zakuro/src/qol.rs
 0x00421114	0x00421970	func-exact	override	debug::Menu::MoveToNext(int)	overrides/supports.c
 0x004220D4	0x00422930	func-same	hint+	event::BattleTalk::Trigger(ProcInst*,const Unit*,const Unit*)	vendor/3dsrecomp/hints.txt
@@ -1240,6 +1253,7 @@ us	jpn	method	use	note	where
 0x00476B8C	0x004775D8	func-same	override	castle::anonymous_namespace::MI_Save::GetHelp(void)	overrides/qol.c
 0x00476BA8	0x004775F4	func-same	override	castle::anonymous_namespace::MI_Save::GetName(void)	overrides/qol.c
 0x00476FB8	0x00477A04	func-same	code	castle::anonymous_namespace::ButlerSeq::MainMenu(void)	overrides/qol.c
+0x0048B63C	0x0048BA24	func-same	override	castle::anonymous_namespace::AchieveBonusMenuItem::GetType(void)	overrides/castlegifts.c
 0x0048BECC	0x0048C29C	func-exact	hint+	castle::Jail::Initialize(int)	vendor/3dsrecomp/hints.txt
 0x0048C038	0x0048C408	func-same	code	castle::Jail::Append(const Unit*)	overrides/cheats.c
 0x0048C584	0x0048C954	func-exact	hint+	castle::Jail::Finalize(void)	vendor/3dsrecomp/hints.txt
@@ -1444,7 +1458,7 @@ us	jpn	method	use	note	where
 0x005239B4	0x00523E40	func-exact	hint+	nw::snd::internal::PoolImpl::CountImpl(void) const	vendor/3dsrecomp/hints.txt
 0x005253A8	0x00525834	func-same	override	map::BattleInfo::Side::GetSimplePower(const map::BattleInfo::Side*,int,int) const	overrides/cheats.c
 0x005270F8	0x00527584	func-same	code	map::Camera::GetPlayAreaH(void) const	overrides/widescreen.c
-0x0052A364	0x0052A7F0	func-same	code	Unit::GetMHPImpl(bool,bool,unit::detail::EnhanceDefinition::Type) const	overrides/cheats.c
+0x0052A364	0x0052A7F0	func-same	code	Unit::GetMHPImpl(bool,bool,unit::detail::EnhanceDefinition::Type) const	overrides/bossmusic.c,overrides/cheats.c
 0x0052D5E4	0x0052DA70	func-same	override	Unit::GetMovePower(bool,unit::detail::EnhanceDefinition::Type) const	overrides/cheats.c
 0x0052DD04	0x0052E190	func-same	override	Unit::IsEquipSkill(short) const	overrides/cheats.c
 0x0052DFE8	0x0052E474	func-same	override	Unit::CanDragonVein(void) const	overrides/cheats.c
@@ -1620,7 +1634,7 @@ us	jpn	method	use	note	where
 0x006BDA6C	0x006BCA6C	data-xref	code	2 refs	overrides/mods.c,overrides/offline_msg.c,overrides/online.c,overrides/qol.c
 0x006BE3C0	0x006BD3C0	data-xref	code	10 refs	overrides/cameras.c,overrides/drawdist.c,source/gfx/src/shadow.rs
 0x006BE404	0x006BD404	data-xref	code	40 refs	overrides/cameras.c,overrides/drawdist.c,overrides/info_ui.c,overrides/widescreen.c,source/gfx/src/freecam.rs,source/gfx/src/skybg.rs
-0x006D1998	0x006D0998	data-xref	code	3 refs	overrides/amiibo.c,overrides/cheats.c,vendor/zakuro/crates/zakuro/src/cheats.rs
+0x006D1998	0x006D0998	data-xref	code	3 refs	overrides/amiibo.c,overrides/castlegifts.c,overrides/cheats.c,vendor/zakuro/crates/zakuro/src/cheats.rs
 0x006D19FC	0x006D09FC	data-xref	code	7 refs	vendor/zakuro/crates/zakuro/src/cheats.rs
 0x006D1B70	0x006D0B70	data-xref	code	22 refs	overrides/amiibo.c,overrides/cameras.c,overrides/cheats.c,overrides/qol.c,vendor/zakuro/crates/zakuro/src/cheats.rs,vendor/zakuro/crates/zakuro/src/states.rs
 0x006D1F18	0x006D0F18	data-xref	code	4 refs	vendor/zakuro/crates/zakuro/src/cheats.rs
@@ -1628,6 +1642,7 @@ us	jpn	method	use	note	where
 0x006D2208	0x006D1208	data-xref+off	code	5 refs	overrides/cameras.c
 0x006D29AC	0x006D19AC	data-xref	code	5 refs	overrides/cheats.c,vendor/zakuro/crates/zakuro/src/cheats.rs
 0x006D2A10	0x006D1A10	data-xref	code	3 refs	overrides/cheats.c,overrides/qol.c,vendor/zakuro/crates/zakuro/src/cheats.rs,vendor/zakuro/crates/zakuro/src/states.rs
+0x006D363C	0x006D263C	data-xref	code	4 refs	overrides/castlegifts.c,vendor/zakuro/crates/zakuro/src/cheats.rs
 0x006D379C	0x006D279C	data-xref	code	5 refs	vendor/zakuro/crates/zakuro/src/cheats.rs
 0x006D38D0	0x006D28D0	data-xref	code	18 refs	vendor/zakuro/crates/zakuro/src/cheats.rs
 0x006D3990	0x006D2990	data-xref	code	25 refs	vendor/zakuro/crates/zakuro/src/cheats.rs
@@ -1648,7 +1663,9 @@ us	jpn	method	use	note	where
 0x006D7364	0x006D6324	data-xref	code	40 refs	overrides/info_ui.c
 0x006D73E8	0x006D63A8	data-xref	code	40 refs	overrides/info_ui.c,vendor/zakuro/crates/zakuro/src/bottom_scene.rs,vendor/zakuro/crates/zakuro/src/playtest.rs
 0x006D7568	0x006D6528	data-xref	code	3 refs	overrides/info_ui.c,overrides/pulse.c
-0x006D7ED0	0x006D6E90	data-xref	code	38 refs	overrides/cheats.c,overrides/info_ui.c,overrides/qol.c,vendor/zakuro/crates/zakuro/src/cheats.rs,vendor/zakuro/crates/zakuro/src/pulse.rs,vendor/zakuro/crates/zakuro/src/qol.rs
+0x006D7ED0	0x006D6E90	data-xref	code	38 refs	overrides/bossmusic.c,overrides/cheats.c,overrides/info_ui.c,overrides/qol.c,vendor/zakuro/crates/zakuro/src/cheats.rs,vendor/zakuro/crates/zakuro/src/pulse.rs,vendor/zakuro/crates/zakuro/src/qol.rs
+0x006D7F38	0x006D6EF8	data-xref	code	25 refs	overrides/bossmusic.c
+0x006D7F88	0x006D6F48	data-xref	code	4 refs	overrides/bossmusic.c
 0x006D7FEC	0x006D6FAC	data-xref	code	3 refs	overrides/cheats.c,vendor/zakuro/crates/zakuro/src/cheats.rs
 0x006D820C	0x006D71CC	data-xref	code	34 refs	vendor/zakuro/crates/zakuro-core/src/pcos/hang.rs
 0x006D8808	0x006D77C8	data-xref	code	36 refs	overrides/qol.c,vendor/zakuro/crates/zakuro-core/src/region.rs,vendor/zakuro/crates/zakuro/src/qol.rs
@@ -1657,13 +1674,15 @@ us	jpn	method	use	note	where
 0x006D93EC	0x006D83AC	data-xref+off	code	22 refs	overrides/randomizer.c
 0x006D95E8	0x006D85A8	data-xref	code	13 refs	overrides/cheats.c,vendor/zakuro/crates/zakuro/src/cheats.rs
 0x006D9F40	0x006D8F00	data-xref	code	18 refs	overrides/cheats.c,overrides/info_ui.c,vendor/zakuro/crates/zakuro-core/src/randomizer/corrin.rs,vendor/zakuro/crates/zakuro-core/src/randomizer/hair.rs,vendor/zakuro/crates/zakuro-core/src/randomizer/weapons.rs,vendor/zakuro/crates/zakuro-core/src/supports.rs,vendor/zakuro/crates/zakuro/src/bottom_scene.rs,vendor/zakuro/crates/zakuro/src/cheats.rs,vendor/zakuro/crates/zakuro/src/playtest.rs,vendor/zakuro/crates/zakuro/src/pulse.rs
-0x006D9F44	0x006D8F04	data-xref+off	code	18 refs	overrides/amiibo.c,overrides/cheats.c,overrides/info_ui.c,vendor/zakuro/crates/zakuro-core/src/supports.rs,vendor/zakuro/crates/zakuro/src/cheats.rs,vendor/zakuro/crates/zakuro/src/playtest.rs,vendor/zakuro/crates/zakuro/src/pulse.rs
+0x006D9F44	0x006D8F04	data-xref+off	code	18 refs	overrides/amiibo.c,overrides/bossmusic.c,overrides/cheats.c,overrides/info_ui.c,vendor/zakuro/crates/zakuro-core/src/supports.rs,vendor/zakuro/crates/zakuro/src/cheats.rs,vendor/zakuro/crates/zakuro/src/playtest.rs,vendor/zakuro/crates/zakuro/src/pulse.rs
 0x006DA0F8	0x006D90B8	data-xref	code	38 refs	vendor/zakuro/crates/zakuro/src/info_ui.rs
 0x006DA170	0x006D9130	data-xref	code	38 refs	overrides/cheats.c
 0x006DA248	0x006D9208	data-xref	code	3 refs	overrides/amiibo.c,overrides/cheats.c,overrides/qol.c,vendor/zakuro/crates/zakuro-core/src/randomizer/mod.rs,vendor/zakuro/crates/zakuro-core/src/supports.rs,vendor/zakuro/crates/zakuro/src/cheats.rs,vendor/zakuro/crates/zakuro/src/pulse.rs
 0x006DA27C	0x006D923C	data-xref	code	5 refs	overrides/cheats.c,overrides/qol.c
-0x006DA318	0x006D92D8	data-xref	code	3 refs	overrides/online.c
-0x006DCA84	0x006DBA74	data-xref	code	13 refs	overrides/timing.c,vendor/zakuro/crates/zakuro/src/hfr.rs
+0x006DA318	0x006D92D8	data-xref	code	3 refs	overrides/bossmusic.c,overrides/online.c
+0x006DC424	0x006DB414	data-xref	code	22 refs	overrides/bossmusic.c
+0x006DC588	0x006DB578	data-xref	code	39 refs	overrides/bossmusic.c
+0x006DCA84	0x006DBA74	data-xref	code	13 refs	overrides/bossmusic.c,overrides/timing.c,vendor/zakuro/crates/zakuro/src/hfr.rs
 0x006DCA9C	0x006DBA8C	data-xref	code	39 refs	vendor/zakuro/crates/zakuro/src/bottom_scene.rs
 0x006DCAA0	0x006DBA90	data-xref	code	25 refs	overrides/cheats.c,overrides/info_ui.c,overrides/pulse.c
 0x006DCB44	0x006DBB34	data-xref	code	40 refs	overrides/supports.c,vendor/zakuro/crates/zakuro-core/src/supports.rs
@@ -1678,6 +1697,7 @@ us	jpn	method	use	note	where
 0x00752B7C	0x00751510	data-xref	comment	39 refs	overrides/info_ui.c
 0x00752B8C	0x00751520	data-xref	code	12 refs	vendor/zakuro/crates/zakuro/src/pulse.rs
 0x00777FFF	0x0077D2BF	data-neighbours	code	shift +0x52c0	vendor/zakuro/crates/zakuro-gpu/src/raster.rs,vendor/zakuro/crates/zakuro-gpu/src/raster/hardware.rs
+0x0077956C	0x0077E82C	data-xref	code	20 refs	overrides/bossmusic.c
 0x0077B000	0x007802C0	data-xref+off	code	1 refs	vendor/zakuro/crates/zakuro-core/src/dispatch.rs
 0x0077B001	0x007802C1	data-xref+off	code	1 refs	vendor/zakuro/crates/zakuro-core/src/dispatch.rs
 0x0077B002	0x007802C2	data-xref+off	code	1 refs	vendor/zakuro/crates/zakuro-core/src/dispatch.rs

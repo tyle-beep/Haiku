@@ -130,6 +130,14 @@ impl Backend {
         }
     }
 
+    /// vrrcap: the display's refresh rate is variable (see
+    /// VulkanPresenter::set_vrr).
+    pub fn set_vrr(&mut self, on: bool) {
+        if let Backend::Vulkan(presenter) = self {
+            presenter.set_vrr(on);
+        }
+    }
+
     /// smooth: the monitor's refresh rate, where DWM gives no refresh grid.
     pub fn set_refresh_hint(&mut self, hz: f64) {
         if let Backend::Vulkan(presenter) = self {

@@ -719,6 +719,7 @@ fn run_headless(game: &mut Running, frames: u64, mut each_frame: impl FnMut(&mut
     if let Some(line) = pulse::summary() {
         println!("{line}"); // pulse
     }
+    zakuro_core::moflexhd::movie_end(); // moflexdec: a movie still under way, said
     if let Some(line) = zakuro_core::moflexhd::summary() {
         println!("{line}"); // moflexhd
     }

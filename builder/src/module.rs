@@ -261,13 +261,16 @@ pub fn build(source: &Path, work: &Path, out: &Path, amiibo: Option<&Path>, setu
     let show = || {
         let done = done.load(Ordering::Relaxed);
         let bytes = watch.bytes_done.load(Ordering::Relaxed);
-        let fraction = bytes as f32 / total_bytes as f32;
+        // buildslow: the bar by the work each file should take (a file is
+        // not worth its bytes: the slowest are compiled first), and the time
+        // left from this PC's pace once a few files have finished (issue
+        // #13: a Celeron's two hours expected, not "stuck")
+        let plan = watch.plan.lock().unwrap().clone();
+        let fraction = if plan.predicted_total > 0.0 { (plan.predicted_done / plan.predicted_total) as f32 } else { bytes as f32 / total_bytes as f32 };
         let elapsed = t0.elapsed();
-        let when = if fraction >= 0.05 && elapsed.as_secs() >= 60 {
-            let left = elapsed.as_secs_f32() / fraction * (1.0 - fraction);
-            format!("about {} min left", (left / 60.0).ceil().max(1.0))
-        } else {
-            format!("{} so far", crate::cc::clock(elapsed))
+        let when = match watch.left(elapsed) {
+            Some(left) => format!("{} left", crate::cc::about(left)),
+            None => format!("{} so far", crate::cc::clock(elapsed)),
         };
         p.at(fraction, format!("{done} of {total} files, {when}{}", activity(&watch.running.lock().unwrap())));
     };
@@ -298,7 +301,9 @@ pub fn build(source: &Path, work: &Path, out: &Path, amiibo: Option<&Path>, setu
                     std::thread::sleep(std::time::Duration::from_millis(100));
                 }
             });
-            let result = crate::cc::objects(&tools.gcc, &code, &pending, jobs, &watch, &|n, _, file, compiled| {
+            // buildslow: a panic in the compile step ends it with a message
+            // (it left the progress thread running forever: issue #17)
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| crate::cc::objects(&tools.gcc, &code, &pending, jobs, &watch, &|n, _, file, compiled| {
                 done.store(n, Ordering::Relaxed);
                 // the list as files finish, so a build that is ended (the
                 // window closed, the PC turned off) carries on from there
@@ -310,7 +315,12 @@ pub fn build(source: &Path, work: &Path, out: &Path, amiibo: Option<&Path>, setu
                     }
                 }
                 show();
-            }, cancel);
+            }, cancel)))
+            .unwrap_or_else(|panic| {
+                let why = panic.downcast_ref::<String>().cloned().or_else(|| panic.downcast_ref::<&str>().map(|s| s.to_string())).unwrap_or_default();
+                log::line(format!("compile: the compile step stopped on an error of Haiku's ({why})"));
+                Err(format!("Haiku's compile step stopped on an error ({why}); what was compiled is kept, so build again"))
+            });
             finished.store(true, Ordering::Relaxed);
             result
         });
@@ -342,7 +352,8 @@ pub fn build(source: &Path, work: &Path, out: &Path, amiibo: Option<&Path>, setu
         })?;
         if !outcome.lowered.is_empty() {
             let list: Vec<String> = outcome.lowered.iter().map(|(s, level)| format!("{s} at {level}")).collect();
-            log::line(format!("module: this PC's memory was too short for {} of the files at -O2: {} (the game runs the same; that code a little slower)", list.len(), list.join(", ")));
+            // buildslow: memory, or far too long at -O2 (the log says which)
+            log::line(format!("module: {} of the files couldn't be compiled at -O2 on this PC (short of memory, or far too slow): {} (the game runs the same; that code a little slower)", list.len(), list.join(", ")));
             lowered = list.len();
         }
         if outcome.retried > 0 {
@@ -385,7 +396,7 @@ pub fn build(source: &Path, work: &Path, out: &Path, amiibo: Option<&Path>, setu
     }
     let took = started.elapsed().as_secs_f32();
     log::line(format!("module: built {} in {:.0} s ({total} files compiled)", out.join(FILE).display(), took));
-    let short = if lowered > 0 { format!(" This PC's memory was short for {lowered} of them, compiled with fewer optimisations: the game plays the same.") } else { String::new() };
+    let short = if lowered > 0 { format!(" {lowered} of them were compiled with fewer optimisations (this PC was short of memory or too slow for them): the game plays the same.") } else { String::new() };
     Ok(format!("The game's code is built ({total} files compiled, {} min {} s).{short}", (took / 60.0).floor() as u32, (took % 60.0) as u32))
 }
 
@@ -395,7 +406,7 @@ fn activity(running: &[crate::cc::Activity]) -> String {
     let Some(longest) = running.iter().min_by_key(|a| a.started) else { return String::new() };
     let mut text = format!(". Compiling {}", longest.file);
     if longest.level != "-O2" {
-        text += &format!(" at {} (short of memory)", longest.level);
+        text += &format!(" again at {}", longest.level); // buildslow: memory, or too slow
     } else if longest.attempt > 0 {
         text += " again";
     }
@@ -415,12 +426,29 @@ fn activity(running: &[crate::cc::Activity]) -> String {
 /// compile32: a line in the log every minute while compiling
 fn heartbeat(watch: &crate::cc::Watch, done: usize, total: usize, elapsed: std::time::Duration) {
     let running = watch.running.lock().unwrap().clone();
+    // buildslow: the processor time only where the PC reports it (Wine
+    // showed "0 s" for every compiler)
+    let cpu_known = watch.cpu_known.load(Ordering::Relaxed);
     let list: Vec<String> = running
         .iter()
-        .map(|a| format!("{} {} ({:.0} s of processor time{})", a.file, crate::cc::clock(a.started.elapsed()), a.cpu.as_secs_f32(), if a.peak > 0 { format!(", {}", crate::cc::gb(a.peak)) } else { String::new() }))
+        .map(|a| {
+            let mut about = Vec::new();
+            if cpu_known {
+                about.push(format!("{:.0} s of processor time", a.cpu.as_secs_f32()));
+            }
+            if a.peak > 0 {
+                about.push(crate::cc::gb(a.peak));
+            }
+            if about.is_empty() {
+                format!("{} {}", a.file, crate::cc::clock(a.started.elapsed()))
+            } else {
+                format!("{} {} ({})", a.file, crate::cc::clock(a.started.elapsed()), about.join(", "))
+            }
+        })
         .collect();
     let free = crate::cc::memory(running.iter().map(|a| a.peak).sum()).map_or(String::new(), |m| format!("; {} of {} free", crate::cc::gb(m.free), crate::cc::gb(m.total)));
-    log::line(format!("compile: {done} of {total} files after {}; running {}{free}", crate::cc::clock(elapsed), if list.is_empty() { "nothing".to_owned() } else { list.join(", ") }));
+    let left = watch.left(elapsed).map_or(String::new(), |l| format!("; {} left", crate::cc::about(l)));
+    log::line(format!("compile: {done} of {total} files after {}; running {}{free}{left}", crate::cc::clock(elapsed), if list.is_empty() { "nothing".to_owned() } else { list.join(", ") }));
 }
 
 /// moves a module into out, the old one out of the way first (Windows lets
@@ -454,9 +482,9 @@ mod tests {
     /// compile32: the progress line names the file compiling longest
     #[test]
     fn the_progress_line_says_what_is_compiling() {
-        let at = |secs: u64, file: &str, peak: u64, attempt: usize, level: &'static str| crate::cc::Activity { file: file.into(), started: Instant::now() - Duration::from_secs(secs), peak, cpu: Duration::ZERO, attempt, level };
+        let at = |secs: u64, file: &str, peak: u64, attempt: usize, level: &'static str| crate::cc::Activity { file: file.into(), started: Instant::now() - Duration::from_secs(secs), peak, cpu: Duration::ZERO, attempt, level, predicted: 10.0 };
         assert_eq!(activity(&[]), "");
         assert_eq!(activity(&[at(5, "code001.c", 0, 0, "-O2"), at(83, "code155.c", 3 << 29, 0, "-O2"), at(9, "code002.c", 0, 0, "-O2")]), ". Compiling code155.c (1:23, 1.5 GB) and 2 others");
-        assert_eq!(activity(&[at(7, "code155.c", 0, 1, "-O1")]), ". Compiling code155.c at -O1 (short of memory) (0:07)");
+        assert_eq!(activity(&[at(7, "code155.c", 0, 1, "-O1")]), ". Compiling code155.c again at -O1 (0:07)");
     }
 }

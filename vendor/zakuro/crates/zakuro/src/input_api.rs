@@ -71,6 +71,14 @@ struct State {
 
 static STATE: Mutex<Option<State>> = Mutex::new(None);
 
+/// l3toggle: tests that drive the shared input state hold this, so they
+/// do not see each other's frames.
+#[cfg(test)]
+pub(crate) fn test_lock() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: Mutex<()> = Mutex::new(());
+    LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 fn with<R>(f: impl FnOnce(&mut State) -> R) -> R {
     let mut guard = STATE.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     f(guard.get_or_insert_with(|| State { rumble_on: true, ..State::default() }))
@@ -209,6 +217,7 @@ mod tests {
 
     #[test]
     fn actions_latch_until_taken_and_rumble_queues() {
+        let _lock = test_lock();
         configure(true, Glyphs::Auto, ButtonLayout::Auto, &Keys::default(), &PadButtons::default());
         let mut pads = PadOutput::default();
         pads.actions[index(PcAction::TouchClick)] = true;

@@ -60,6 +60,7 @@ void randomizer_keep(KeepAdd add);
 void gfx_eft_keep(KeepAdd add);
 void transblur_keep(KeepAdd add);
 void boot3_keep(KeepAdd add);
+void bossmusic_keep(KeepAdd add);
 
 /* the variables, listed once; count back, the list in *out */
 RECOMP_EXPORT uint32_t haiku_keep_regions(const KeepRegion **out) {
@@ -76,6 +77,7 @@ RECOMP_EXPORT uint32_t haiku_keep_regions(const KeepRegion **out) {
         gfx_eft_keep(keep_add);
         transblur_keep(keep_add);
         boot3_keep(keep_add);
+        bossmusic_keep(keep_add);
     }
     *out = keep_regions;
     return keep_count;

@@ -646,6 +646,7 @@ unsafe extern "C" fn hook_frame(ctx: *mut c_void) {
         g.eft_check(system, "next-frame", false);
         g.stats.frames += 1;
         g.hd.frame(g.stats.frames); // hdpacks
+        zakuro_core::moflexhd::frame(g.stats.frames); // selena: a movie picture's place stays one while pictures go there
         g.emu.frame(g.stats.frames, g.mode == Mode::Native); // gfx-final
         g.capture_check(system); // gfx-final: dev
         bottom::peek(system, g.stats.frames); // gfx-bottom: dev
@@ -1976,7 +1977,9 @@ impl Gfx {
         // a texture pack's picture in its place (the same pack the emulated
         // GPU draws with, e.g. the controller glyph swaps), once it is read
         // hdpacks: read in the background and kept within a budget (hd.rs)
-        let found = self.hd.get(&raw, content, format, tex.width, tex.height, flip);
+        // moflexdec: not an HD movie's picture (every one new; no pack has it)
+        let hd_picture = moflexhd::hd_picture(tex);
+        let found = if hd_picture { hd::Got::None } else { self.hd.get(&raw, content, format, tex.width, tex.height, flip) };
         step(zakuro_core::moflexhd::kind::TEX_PACK);
         match found {
             hd::Got::Ready(picture) => {
@@ -1994,7 +1997,11 @@ impl Gfx {
             // moflexhd: a tile at a time (a movie's picture changes every
             // frame; an HD one is 1024x1024), texel for texel the same
             let timed = (w * h >= 256 * 1024 && zakuro_core::moflexhd::on()).then(std::time::Instant::now);
-            zakuro_gpu::texture::decode_texture(&raw, format, w, h, flip, &mut rgba);
+            if hd_picture {
+                moflexhd::decode_bands(&raw, format, w, h, flip, &mut rgba); // moflexdec: the same texels, on a few threads
+            } else {
+                zakuro_gpu::texture::decode_texture(&raw, format, w, h, flip, &mut rgba);
+            }
             if let Some(started) = timed {
                 zakuro_core::moflexhd::note(zakuro_core::moflexhd::kind::TEXELS, started.elapsed().as_nanos() as u64, (w * h) as u64);
             }
@@ -2966,6 +2973,40 @@ mod moflexhd_tests {
         let whole = started.elapsed();
         assert!(fast == out);
         eprintln!("moflexhd: a 1024x1024 RGB8 texture: texel by texel {each:.2?}, a tile at a time {whole:.2?}");
+    }
+
+    /// moflexdec: decoded in bands on several threads, a movie texture has
+    /// the same texels as decoded whole, both ways up, every size the
+    /// player makes and some uneven ones (bands that don't divide evenly)
+    #[test]
+    fn a_movie_texture_in_bands_is_the_same() {
+        let mut seed = 0x0123_4567_89AB_CDEFu64;
+        let data: Vec<u8> = (0..1024 * 1024 * 4)
+            .map(|_| {
+                seed ^= seed << 13;
+                seed ^= seed >> 7;
+                seed ^= seed << 17;
+                seed as u8
+            })
+            .collect();
+        for format in [TextureFormat::Rgb8, TextureFormat::Rgba8, TextureFormat::Rgb565] {
+            for (w, h) in [(1024u32, 1024u32), (1024, 512), (512, 1024), (1024, 584), (520, 1000), (64, 8)] {
+                for flip in [false, true] {
+                    let mut whole = vec![0u8; (w * h * 4) as usize];
+                    decode_texture(&data, format, w, h, flip, &mut whole);
+                    let mut bands = vec![1u8; (w * h * 4) as usize];
+                    crate::moflexhd::decode_bands(&data, format, w, h, flip, &mut bands);
+                    assert!(whole == bands, "{format:?} {w}x{h} flip {flip}");
+                }
+            }
+        }
+        let mut out = vec![0u8; 1024 * 1024 * 4];
+        let started = std::time::Instant::now();
+        decode_texture(&data, TextureFormat::Rgb8, 1024, 1024, false, &mut out);
+        let whole = started.elapsed();
+        let started = std::time::Instant::now();
+        crate::moflexhd::decode_bands(&data, TextureFormat::Rgb8, 1024, 1024, false, &mut out);
+        eprintln!("moflexdec: a 1024x1024 RGB8 texture: whole {whole:.2?}, in bands {:.2?}", started.elapsed());
     }
 }
 

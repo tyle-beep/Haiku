@@ -64,13 +64,32 @@ RECOMP_OVERRIDE(0x00169118) {
 
 /* VX2DecoderUnpack(VX2DecoderData&, const void*, unsigned int): one picture
    decoded; the decoder's size is in its state, r0's first word: width at +4,
-   height at +8 (VX2DecoderInit) */
+   height at +8 (VX2DecoderInit).
+   moflexdec: the decoder is hand-written ARM that jumps through tables and
+   returns through registers, so its recompiled code often hands control
+   back up the host's stack before the picture is done (no exit asked, r15
+   still inside the decoder), and the guest goes on from r15 through the
+   dispatcher. CALL_THEN takes "no exit" for "returned" and ran the tail
+   right away, so the decode counted ~0.01 ms a picture (moflexhd.md's
+   numbers for the decode were that early part only). The tail now waits
+   for the guest to come back to the return address, as it does after an
+   exit. Timing only (FATES_MOVIE_STATS); off, a plain call as before. */
+static void moflexhd_then(Context *ctx, uint32_t ret, uint32_t sp, RecompTail tail, const uint32_t *words) {
+    if (!ctx->exit && (ctx->r[15] | ctx->thumb) == ret && ctx->r[13] == sp) tail(ctx, words);
+    else recomp_tail_defer(ctx, ret, sp, tail, "moflexhd_decoded", words);
+}
+
 RECOMP_OVERRIDE(0x001666E0) {
     if (moflexhd_counting) {
         uint32_t state = mem_read32(ctx, ctx->r[0]);
         uint32_t pixels = state ? mem_read32(ctx, state + 4) * mem_read32(ctx, state + 8) : 0;
         uint64_t now = moflexhd_cycles();
-        CALL_THEN(RECOMP_ORIGINAL(0x001666E0), moflexhd_decoded, (uint32_t)now, (uint32_t)(now >> 32), pixels);
+        const uint32_t ret = ctx->r[14], sp = ctx->r[13];
+        const uint32_t words[RECOMP_TAIL_WORDS] = {(uint32_t)now, (uint32_t)(now >> 32), pixels};
+        if (UNLIKELY(++ctx->depth > RECOMP_DEPTH_LIMIT)) { ctx->depth--; ctx->exit = EXIT_UNWIND; return; }
+        RECOMP_ORIGINAL(0x001666E0)(ctx);
+        ctx->depth--;
+        moflexhd_then(ctx, ret, sp, moflexhd_decoded, words);
         return;
     }
     CALL(RECOMP_ORIGINAL(0x001666E0));

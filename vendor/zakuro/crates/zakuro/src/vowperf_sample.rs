@@ -212,6 +212,8 @@ pub fn report() {
         let mut names = HashMap::new();
         // by place: guest function or module+offset; per thread
         let mut by_place: HashMap<(String, bool), u64> = HashMap::new();
+        // moflexdec: and by thread, to tell the threads' places apart
+        let mut by_thread_place: HashMap<(u32, String), u64> = HashMap::new();
         let mut by_thread: HashMap<u32, (u64, u64)> = HashMap::new();
         let mut by_module: HashMap<(String, bool), u64> = HashMap::new();
         let mut waits = 0u64;
@@ -237,6 +239,7 @@ pub fn report() {
                 }
                 _ => format!("{module}+0x{:X}", rip - base),
             };
+            *by_thread_place.entry((thread, name.clone())).or_insert(0) += count;
             *by_place.entry((name, predicting)).or_insert(0) += count;
         }
         let mut text = format!(
@@ -263,6 +266,14 @@ pub fn report() {
         places.sort_by_key(|&(_, count)| std::cmp::Reverse(count));
         for ((place, predicting), count) in places.into_iter().take(400) {
             text += &format!("place\t{count}\t{}\t{place}\n", if predicting { "predicting" } else { "-" });
+        }
+        text += "# places by thread (moflexdec)
+";
+        let mut tplaces: Vec<_> = by_thread_place.into_iter().collect();
+        tplaces.sort_by_key(|&(_, count)| std::cmp::Reverse(count));
+        for ((thread, place), count) in tplaces.into_iter().take(600) {
+            text += &format!("tplace	{thread}	{count}	{place}
+");
         }
         let _ = std::fs::write(&path, text);
     }

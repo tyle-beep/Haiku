@@ -34,7 +34,14 @@ const HAND: u64 = 0xB077_0000_0000_0003;
 
 /// how long the on-demand button has to be held to count as a hold, which
 /// hides the panel again when let go, rather than a tap, which toggles it.
-const HOLD: Duration = Duration::from_millis(250);
+/// l3toggle: only On Demand has the hold (its option says so: shown while
+/// held); in Auto, Overlay and Panel letting go does nothing. It was 250 ms
+/// in every mode, so a firm click of L3 was a hold and its release undid
+/// the toggle (a player's report). A stick's click is slower than a key's.
+const HOLD: Duration = Duration::from_millis(500);
+/// l3toggle: and the polls it has to be seen held over, so a hitch (one long
+/// frame between the press and the release) does not make a click a hold.
+const HOLD_POLLS: u32 = 8;
 /// how long sliding in or out takes.
 const SLIDE: f32 = 0.22;
 /// the touch cursor stays this long after it was last used, then fades.
@@ -200,6 +207,8 @@ pub struct BottomScreen {
     reveal: f32,
     /// the button is down, since when.
     held_since: Option<Instant>,
+    /// l3toggle: the polls since it went down.
+    held_polls: u32,
     /// the button's state when it went down, to undo a hold.
     shown_before_hold: bool,
     /// the BottomScreen action (keyboard or controller) was held.
@@ -318,6 +327,7 @@ impl BottomScreen {
             shown: None,
             reveal: 1.0,
             held_since: None,
+            held_polls: 0,
             shown_before_hold: false,
             pad_toggle_down: false,
             check_tap: false,
@@ -432,8 +442,9 @@ impl BottomScreen {
         self.auto.shown
     }
 
-    /// the show/hide button, the keyboard's or the controller's: a tap
-    /// toggles, a hold shows it while held.
+    /// the show/hide button, the keyboard's or the controller's: each press
+    /// toggles, on the press; letting go does nothing, except in On Demand,
+    /// where a hold shows it while held.
     pub fn button(&mut self, pressed: bool, settings: &Settings, composes: bool) {
         let Some(mode) = Self::mode(settings, composes) else { return };
         self.follow_mode(settings, composes);
@@ -442,6 +453,7 @@ impl BottomScreen {
         match (pressed, self.held_since) {
             (true, None) => {
                 self.held_since = Some(Instant::now());
+                self.held_polls = 0;
                 self.shown_before_hold = shown;
                 self.before_hold = (self.shown, self.auto.dismissed);
                 self.shown = Some(!shown);
@@ -454,8 +466,10 @@ impl BottomScreen {
             }
             (false, Some(since)) => {
                 self.held_since = None;
-                // held, back to how it was; tapped, it stays toggled
-                if since.elapsed() >= HOLD {
+                // l3toggle: On Demand held, back to how it was; anything
+                // else, it stays toggled
+                let held = since.elapsed() >= HOLD && self.held_polls >= HOLD_POLLS;
+                if self.mode == Some(Mode::OnDemand) && held {
                     self.shown = self.before_hold.0;
                     self.auto.dismissed = self.before_hold.1;
                 }
@@ -473,6 +487,9 @@ impl BottomScreen {
             log::debug!("bottom screen: its button {}", if toggle { "down" } else { "up" });
             self.pad_toggle_down = toggle;
             self.button(toggle, settings, composes);
+        }
+        if self.held_since.is_some() {
+            self.held_polls = self.held_polls.saturating_add(1); // l3toggle
         }
         let now = Instant::now();
         // qol4: the first poll puts the panel where it is wanted at once
@@ -970,6 +987,7 @@ mod tests {
         let mut settings = Settings::default();
         settings.pc.bottom_screen = Mode::Overlay;
         let mut bottom = BottomScreen::new();
+        bottom.ignore_pads = true; // l3toggle: the input API is shared with other tests
         bottom.art_tried = true;
         let window = (1920, 1080);
         bottom.poll(&settings, true);
@@ -1030,9 +1048,129 @@ mod tests {
         assert!(bottom.is_shown(PanelMode::OnDemand), "a tap toggles it on");
         bottom.button(true, &settings, true);
         bottom.held_since = Some(Instant::now() - HOLD * 2);
+        bottom.held_polls = HOLD_POLLS;
         assert!(!bottom.is_shown(PanelMode::OnDemand));
         bottom.button(false, &settings, true);
         assert!(bottom.is_shown(PanelMode::OnDemand), "a hold goes back to how it was");
+    }
+
+    /// l3toggle: an input script's frames, through the real keyboard and
+    /// controller mapping and the input API, into the panel's poll, each
+    /// frame taking `frame_ms`, but the one `slow` names its own time (a
+    /// hitch). The frames at which what is wanted changed.
+    fn panel_changes(script: &str, mode: Mode, frames: u64, frame_ms: u64, slow: Option<(u64, u64)>) -> Vec<(u64, bool)> {
+        let mut settings = Settings::default();
+        settings.pc.bottom_screen = mode;
+        crate::input_api::configure(true, settings.pc.glyphs, settings.pc.button_layout, &settings.keys, &settings.pad);
+        let mut script = crate::input_script::Script::from_text(script, "l3toggle test", &settings);
+        let mut bottom = BottomScreen::new();
+        bottom.ignore_pads = false;
+        let panel = BottomScreen::mode(&settings, true).expect("a panel mode");
+        let mut was = None;
+        let mut changes = Vec::new();
+        for frame in 0..frames {
+            script.input(frame);
+            bottom.poll(&settings, true);
+            let wanted = bottom.wanted(panel);
+            if was.is_some_and(|was| was != wanted) {
+                changes.push((frame, wanted));
+            }
+            was = Some(wanted);
+            let ms = if slow.is_some_and(|(at, _)| at == frame) { slow.map_or(0, |(_, ms)| ms) } else { frame_ms };
+            std::thread::sleep(Duration::from_millis(ms));
+        }
+        // nothing held is left for the other tests
+        crate::input_api::update(zakuro_core::services::hid::PadState::empty(), [false; crate::controls::PcAction::COUNT], [0.0; 2], &crate::controls::PadOutput::default(), crate::controls::Device::Keyboard, Vec::new());
+        changes
+    }
+
+    /// l3toggle: a player's report, "L3 activates on both a press and
+    /// release": one press of L3 (or M) is one toggle, on the press; held,
+    /// it does not repeat, and letting go does nothing, however long it
+    /// was held, in every mode but On Demand's hold-to-peek.
+    #[test]
+    fn l3_toggles_once_per_press_not_on_release() {
+        let _lock = crate::input_api::test_lock();
+        // L3 on a PlayStation pad, held 20 frames of 16 ms (~330 ms, a firm click)
+        let l3 = "10 pad playstation LeftThumb down
+30 pad playstation LeftThumb up
+";
+        assert_eq!(panel_changes(l3, Mode::Auto, 45, 16, None), vec![(10, true)], "Auto: shown on the press, still shown after the release");
+        // a quick click, and a second one: two toggles, one each
+        let two = "10 pad xbox LeftThumb down
+14 pad xbox LeftThumb up
+24 pad xbox LeftThumb down
+40 pad xbox LeftThumb up
+";
+        assert_eq!(panel_changes(two, Mode::Auto, 50, 16, None), vec![(10, true), (24, false)], "Auto: one toggle per press");
+        // held a long while: no repeat, and letting go leaves it
+        let long = "5 pad nintendo LeftThumb down
+70 pad nintendo LeftThumb up
+";
+        assert_eq!(panel_changes(long, Mode::Auto, 80, 16, None), vec![(5, true)], "Auto: a long hold toggles once");
+        // the keyboard's M, the same action
+        let m = "10 key KeyM down
+30 key KeyM up
+";
+        assert_eq!(panel_changes(m, Mode::Auto, 40, 16, None), vec![(10, true)], "Auto: M toggles once");
+        // the always-shown modes: hidden on the press, and stay hidden
+        assert_eq!(panel_changes(l3, Mode::Overlay, 40, 16, None), vec![(10, false)], "Overlay");
+        assert_eq!(panel_changes(l3, Mode::Panel, 40, 16, None), vec![(10, false)], "Panel");
+        // On Demand: a click across a hitch (one frame of 600 ms) is a
+        // click, not a hold, so it stays out
+        let hitch = "10 pad xbox LeftThumb down
+12 pad xbox LeftThumb up
+";
+        assert_eq!(panel_changes(hitch, Mode::OnDemand, 20, 16, Some((10, 600))), vec![(10, true)], "On Demand: a click across a hitch");
+        assert_eq!(panel_changes(l3, Mode::OnDemand, 40, 12, None), vec![(10, true)], "On Demand: a firm click");
+        // On Demand's hold-to-peek, as its option says: out while held
+        let peek = "10 pad xbox LeftThumb down
+60 pad xbox LeftThumb up
+";
+        assert_eq!(panel_changes(peek, Mode::OnDemand, 70, 16, None), vec![(10, true), (60, false)], "On Demand: a long hold peeks");
+    }
+
+    /// l3toggle: live, through SDL3: a virtual pad's (dev/tools/vpad) or a
+    /// real one's L3, polled as the window polls it, each toggle printed.
+    ///   FATES_PROBE_SECS=9 cargo test --lib l3_live -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn l3_live_through_sdl() {
+        let _lock = crate::input_api::test_lock();
+        let secs: u64 = std::env::var("FATES_PROBE_SECS").ok().and_then(|s| s.parse().ok()).unwrap_or(10);
+        let settings = Settings::default();
+        crate::input_api::configure(true, settings.pc.glyphs, settings.pc.button_layout, &settings.keys, &settings.pad);
+        let mut pads = crate::pads::Pads::new(settings.pad.clone(), settings.pc.button_layout, settings.pc.stick_deadzone);
+        let mut bottom = BottomScreen::new();
+        bottom.ignore_pads = false;
+        let panel = BottomScreen::mode(&settings, true).expect("a panel mode");
+        let start = Instant::now();
+        let (mut was, mut held, mut toggles, mut known) = (bottom.wanted(panel), false, 0, 0);
+        while start.elapsed().as_secs() < secs {
+            pads.poll();
+            let list = pads.list();
+            if list.len() != known {
+                known = list.len();
+                println!("live {:>5} ms: {known} controllers {:?}", start.elapsed().as_millis(), list.iter().map(|pad| (&pad.name, pad.kind)).collect::<Vec<_>>());
+            }
+            let (out, last) = pads.output();
+            let device = last.map_or(crate::controls::Device::Keyboard, |(family, _)| crate::controls::Device::Pad(family));
+            crate::input_api::update(zakuro_core::services::hid::PadState::empty(), [false; crate::controls::PcAction::COUNT], out.circle, &out, device, list);
+            let l3 = crate::input_api::action_held(crate::controls::PcAction::BottomScreen);
+            if l3 != held {
+                held = l3;
+                println!("live {:>5} ms: L3 {}", start.elapsed().as_millis(), if l3 { "down" } else { "up" });
+            }
+            bottom.poll(&settings, true);
+            let wanted = bottom.wanted(panel);
+            if wanted != was {
+                was = wanted;
+                toggles += 1;
+                println!("live {:>5} ms: the panel {} (toggle {toggles})", start.elapsed().as_millis(), if wanted { "comes out" } else { "goes away" });
+            }
+            std::thread::sleep(Duration::from_millis(16));
+        }
+        println!("live: {toggles} toggles");
     }
 
     /// the composition's bottom screen is where touches are mapped from, and
